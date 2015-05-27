@@ -8,10 +8,12 @@ import (
 	"github.com/gorilla/mux"
 	. "github.com/weaveworks/weave/common"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 var version = "(unreleased version)"
@@ -29,20 +31,23 @@ type joinInfo struct {
 }
 
 var (
-	network string
-	subnet  *net.IPNet
+	network        string
+	subnet         *net.IPNet
+	resolvConfPath string
 )
 
 func main() {
 	var (
 		justVersion bool
 		address     string
+		confdir     string
 		debug       bool
 	)
 
 	flag.BoolVar(&justVersion, "version", false, "print version and exit")
 	flag.BoolVar(&debug, "debug", false, "output debugging info to stderr")
 	flag.StringVar(&address, "socket", "/var/run/docker-plugin/plugin.sock", "socket on which to listen")
+	flag.StringVar(&confdir, "configdir", "/var/run/weave-plugin", "path in which to store temporary config files, e.g., resolv.conf")
 
 	flag.Parse()
 
@@ -70,6 +75,11 @@ func main() {
 
 	router.Methods("POST").Path("/NetworkDriver.Join").HandlerFunc(joinEndpoint)
 	router.Methods("POST").Path("/NetworkDriver.Leave").HandlerFunc(leaveEndpoint)
+
+	// Put the docker bridge IP into a resolv.conf to be used later.
+	nameserver := "nameserver 172.17.42.1\n" // get this from the docker bridge
+	resolvConfPath = filepath.Join(confdir, "resolv.conf")
+	ioutil.WriteFile(resolvConfPath, []byte(nameserver), os.ModePerm)
 
 	var listener net.Listener
 
@@ -335,6 +345,7 @@ func joinEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	res := &joinResponse{
 		InterfaceNames: []*iface{ifname},
+		ResolvConfPath: resolvConfPath,
 	}
 
 	objectResponse(w, res)
