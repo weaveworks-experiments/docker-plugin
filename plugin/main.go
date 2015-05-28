@@ -7,6 +7,7 @@ import (
 	"fmt"
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/gorilla/mux"
+	"github.com/vishvananda/netlink"
 	. "github.com/weaveworks/weave/common"
 	"io"
 	"io/ioutil"
@@ -20,6 +21,7 @@ import (
 const (
 	MethodReceiver = "NetworkDriver"
 	WeaveContainer = "weave"
+	WeaveBridge    = "weave"
 )
 
 var version = "(unreleased version)"
@@ -333,22 +335,36 @@ func joinEndpoint(w http.ResponseWriter, r *http.Request) {
 	localName := "vethwel" + endID[:5]
 	guestName := "vethweg" + endID[:5]
 	// create and attach local name to the bridge
-	ipout, err := doIpCmd([]string{"link", "add", "name", localName, "type", "veth", "peer", "name", guestName})
-	if err != nil {
-		Warning.Print(ipout)
-		sendError(w, "Could not configure net device", http.StatusInternalServerError)
+
+	var (
+		bridge *netlink.Bridge
+		local  *netlink.Veth
+	)
+
+	local = &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{Name: localName},
+		PeerName:  guestName,
+	}
+	if err := netlink.LinkAdd(local); err != nil {
+		Error.Print(err)
+		errorResponsef(w, "could not create veth pair")
 		return
 	}
-	ipout, err = doIpCmd([]string{"link", "set", localName, "master", "weave"})
-	if err != nil {
-		Warning.Print(ipout)
-		sendError(w, "Could not configure net device", http.StatusInternalServerError)
+
+	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
+		Error.Print(err)
+		errorResponsef(w, `bridge "%s" not present`, WeaveBridge)
 		return
+	} else {
+		var ok bool
+		if bridge, ok = maybeBridge.(*netlink.Bridge); !ok {
+			Error.Printf("%s is %+v", WeaveBridge, maybeBridge)
+			errorResponsef(w, `device "%s" not a bridge`, WeaveBridge)
+			return
+		}
 	}
-	ipout, err = doIpCmd([]string{"link", "set", localName, "up"})
-	if err != nil {
-		Warning.Print(ipout)
-		sendError(w, "Could not configure net device", http.StatusInternalServerError)
+	if netlink.LinkSetMaster(local, bridge) != nil || netlink.LinkSetUp(local) != nil {
+		errorResponsef(w, `unable to bring veth up`)
 		return
 	}
 
@@ -411,16 +427,6 @@ func runWeaveCmd(args []string) error {
 		Warning.Print(err.Error())
 	}
 	return err
-}
-
-func doIpCmd(args []string) (string, error) {
-	cmd := exec.Command("ip", args...)
-	cmd.Env = []string{"PATH=/usr/bin:/usr/local/bin"}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		Warning.Print(string(out))
-	}
-	return string(out), err
 }
 
 func getSwitchIP() (string, error) {
