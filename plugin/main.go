@@ -16,6 +16,10 @@ import (
 	"path/filepath"
 )
 
+const (
+	MethodReceiver = "NetworkDriver"
+)
+
 var version = "(unreleased version)"
 
 type handshakeResp struct {
@@ -63,18 +67,19 @@ func main() {
 	router := mux.NewRouter()
 	router.NotFoundHandler = http.HandlerFunc(notFound)
 	router.Methods("GET").Path("/status").HandlerFunc(status)
-
 	router.Methods("POST").Path("/Plugin.Activate").HandlerFunc(handshake)
 
-	router.Methods("POST").Path("/NetworkDriver.CreateNetwork").HandlerFunc(createNetwork)
-	router.Methods("POST").Path("/NetworkDriver.DeleteNetwork").HandlerFunc(deleteNetwork)
+	handleMethod := func(method string, h http.HandlerFunc) {
+		router.Methods("POST").Path(fmt.Sprintf("/%s.%s", MethodReceiver, method)).HandlerFunc(h)
+	}
 
-	router.Methods("POST").Path("/NetworkDriver.CreateEndpoint").HandlerFunc(createEndpoint)
-	router.Methods("POST").Path("/NetworkDriver.DeleteEndpoint").HandlerFunc(deleteEndpoint)
-	router.Methods("POST").Path("/NetworkDriver.EndpointOperInfo").HandlerFunc(infoEndpoint)
-
-	router.Methods("POST").Path("/NetworkDriver.Join").HandlerFunc(joinEndpoint)
-	router.Methods("POST").Path("/NetworkDriver.Leave").HandlerFunc(leaveEndpoint)
+	handleMethod("CreateNetwork", createNetwork)
+	handleMethod("DeleteNetwork", deleteNetwork)
+	handleMethod("CreateEndpoint", createEndpoint)
+	handleMethod("DeleteEndpoint", deleteEndpoint)
+	handleMethod("EndpointOperInfo", infoEndpoint)
+	handleMethod("Join", joinEndpoint)
+	handleMethod("Leave", leaveEndpoint)
 
 	// Put the docker bridge IP into a resolv.conf to be used later.
 	nameserver := "nameserver 172.17.42.1\n" // get this from the docker bridge
