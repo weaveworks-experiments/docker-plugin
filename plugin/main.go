@@ -399,8 +399,9 @@ func getWeaveCmd(args []string) (string, error) {
 }
 
 func runWeaveCmd(args []string) error {
-	cmd := exec.Command("./weave", append([]string{}, args...)...)
+	cmd := exec.Command("./weave", append([]string{"--local"}, args...)...)
 	cmd.Env = []string{
+		"PROCFS=/hostproc",
 		"PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/bin",
 		"WEAVE_DEBUG=true"}
 	cmd.Stdout = os.Stdout
