@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/gorilla/mux"
 	. "github.com/weaveworks/weave/common"
 	"io"
@@ -14,6 +15,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+)
+
+const (
+	MethodReceiver = "NetworkDriver"
+	WeaveContainer = "weave"
 )
 
 var version = "(unreleased version)"
@@ -34,6 +40,7 @@ var (
 	network        string
 	subnet         *net.IPNet
 	resolvConfPath string
+	client         *docker.Client
 )
 
 func main() {
@@ -60,21 +67,28 @@ func main() {
 
 	peers := flag.Args()
 
+	var err error
+	client, err = docker.NewClient("unix:///var/run/docker.sock")
+	if err != nil {
+		Error.Fatalf("could not connect to docker: %s", err)
+	}
+
 	router := mux.NewRouter()
 	router.NotFoundHandler = http.HandlerFunc(notFound)
 	router.Methods("GET").Path("/status").HandlerFunc(status)
-
 	router.Methods("POST").Path("/Plugin.Activate").HandlerFunc(handshake)
 
-	router.Methods("POST").Path("/NetworkDriver.CreateNetwork").HandlerFunc(createNetwork)
-	router.Methods("POST").Path("/NetworkDriver.DeleteNetwork").HandlerFunc(deleteNetwork)
+	handleMethod := func(method string, h http.HandlerFunc) {
+		router.Methods("POST").Path(fmt.Sprintf("/%s.%s", MethodReceiver, method)).HandlerFunc(h)
+	}
 
-	router.Methods("POST").Path("/NetworkDriver.CreateEndpoint").HandlerFunc(createEndpoint)
-	router.Methods("POST").Path("/NetworkDriver.DeleteEndpoint").HandlerFunc(deleteEndpoint)
-	router.Methods("POST").Path("/NetworkDriver.EndpointOperInfo").HandlerFunc(infoEndpoint)
-
-	router.Methods("POST").Path("/NetworkDriver.Join").HandlerFunc(joinEndpoint)
-	router.Methods("POST").Path("/NetworkDriver.Leave").HandlerFunc(leaveEndpoint)
+	handleMethod("CreateNetwork", createNetwork)
+	handleMethod("DeleteNetwork", deleteNetwork)
+	handleMethod("CreateEndpoint", createEndpoint)
+	handleMethod("DeleteEndpoint", deleteEndpoint)
+	handleMethod("EndpointOperInfo", infoEndpoint)
+	handleMethod("Join", joinEndpoint)
+	handleMethod("Leave", leaveEndpoint)
 
 	// Put the docker bridge IP into a resolv.conf to be used later.
 	nameserver := "nameserver 172.17.42.1\n" // get this from the docker bridge
@@ -83,7 +97,7 @@ func main() {
 
 	var listener net.Listener
 
-	listener, err := net.Listen("unix", address)
+	listener, err = net.Listen("unix", address)
 	if err != nil {
 		Error.Fatalf("[plugin] Unable to listen on %s: %s", address, err)
 	}
@@ -385,8 +399,9 @@ func getWeaveCmd(args []string) (string, error) {
 }
 
 func runWeaveCmd(args []string) error {
-	cmd := exec.Command("./weave", append([]string{}, args...)...)
+	cmd := exec.Command("./weave", append([]string{"--local"}, args...)...)
 	cmd.Env = []string{
+		"PROCFS=/hostproc",
 		"PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/bin",
 		"WEAVE_DEBUG=true"}
 	cmd.Stdout = os.Stdout
@@ -408,13 +423,32 @@ func doIpCmd(args []string) (string, error) {
 	return string(out), err
 }
 
+func getSwitchIP() (string, error) {
+	info, err := client.InspectContainer(WeaveContainer)
+	if err != nil {
+		return "", err
+	}
+	return info.NetworkSettings.IPAddress, nil
+}
+
 // assumed to be in the subnet
 func getIP(ID string) (net.IP, error) {
-	res, err := getWeaveCmd([]string{"alloc", ID})
+	weaveip, err := getSwitchIP()
 	if err != nil {
 		return nil, err
 	}
-	ip, _, err := net.ParseCIDR(res)
+	res, err := http.Post(fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID), "", nil)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Received status %d from IPAM", res.StatusCode)
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	ip, _, err := net.ParseCIDR(string(body))
 	return ip, err
 }
 
