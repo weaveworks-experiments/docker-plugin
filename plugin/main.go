@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/gorilla/mux"
 	. "github.com/weaveworks/weave/common"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 const (
 	MethodReceiver = "NetworkDriver"
+	WeaveContainer = "weave"
 )
 
 var version = "(unreleased version)"
@@ -38,6 +40,7 @@ var (
 	network        string
 	subnet         *net.IPNet
 	resolvConfPath string
+	client         *docker.Client
 )
 
 func main() {
@@ -64,6 +67,12 @@ func main() {
 
 	peers := flag.Args()
 
+	var err error
+	client, err = docker.NewClient("unix:///var/run/docker.sock")
+	if err != nil {
+		Error.Fatalf("could not connect to docker: %s", err)
+	}
+
 	router := mux.NewRouter()
 	router.NotFoundHandler = http.HandlerFunc(notFound)
 	router.Methods("GET").Path("/status").HandlerFunc(status)
@@ -88,7 +97,7 @@ func main() {
 
 	var listener net.Listener
 
-	listener, err := net.Listen("unix", address)
+	listener, err = net.Listen("unix", address)
 	if err != nil {
 		Error.Fatalf("[plugin] Unable to listen on %s: %s", address, err)
 	}
@@ -413,13 +422,32 @@ func doIpCmd(args []string) (string, error) {
 	return string(out), err
 }
 
+func getSwitchIP() (string, error) {
+	info, err := client.InspectContainer(WeaveContainer)
+	if err != nil {
+		return "", err
+	}
+	return info.NetworkSettings.IPAddress, nil
+}
+
 // assumed to be in the subnet
 func getIP(ID string) (net.IP, error) {
-	res, err := getWeaveCmd([]string{"alloc", ID})
+	weaveip, err := getSwitchIP()
 	if err != nil {
 		return nil, err
 	}
-	ip, _, err := net.ParseCIDR(res)
+	res, err := http.Post(fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID), "", nil)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Received status %d from IPAM", res.StatusCode)
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	ip, _, err := net.ParseCIDR(string(body))
 	return ip, err
 }
 
