@@ -282,7 +282,9 @@ func deleteEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Debug.Printf("Delete endpoint request: %+v", &delete)
-	// TODO
+	if err := releaseIP(delete.EndpointID); err != nil {
+		Warning.Printf("error releasing IP: %s", err)
+	}
 	emptyResponse(w)
 	Info.Printf("Delete endpoint %s", delete.EndpointID)
 }
@@ -331,26 +333,15 @@ func joinEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	endID := j.EndpointID
 
-	// use the endpoint ID bytes to make veth names, and cross fingers
-	localName := "vethwel" + endID[:5]
-	guestName := "vethweg" + endID[:5]
 	// create and attach local name to the bridge
-
-	var (
-		bridge *netlink.Bridge
-		local  *netlink.Veth
-	)
-
-	local = &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{Name: localName},
-		PeerName:  guestName,
-	}
+	local := vethPair(endID[:5])
 	if err := netlink.LinkAdd(local); err != nil {
 		Error.Print(err)
 		errorResponsef(w, "could not create veth pair")
 		return
 	}
 
+	var bridge *netlink.Bridge
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
 		Error.Print(err)
 		errorResponsef(w, `bridge "%s" not present`, WeaveBridge)
@@ -369,7 +360,7 @@ func joinEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ifname := &iface{
-		SrcName: guestName,
+		SrcName: local.PeerName,
 		DstName: "ethwe",
 		ID:      0,
 	}
@@ -394,13 +385,24 @@ func leaveEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
 	}
-	// TODO
 	Debug.Printf("Leave request: %+v", &l)
+
+	local := vethPair(l.EndpointID[:5])
+	if err := netlink.LinkDel(local); err != nil {
+		Warning.Printf("unable to delete veth on leave: %s", err)
+	}
 	emptyResponse(w)
 	Info.Printf("Leave %s:%s", l.NetworkID, l.EndpointID)
 }
 
 // ===
+
+func vethPair(suffix string) *netlink.Veth {
+	return &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{Name: "vethwl" + suffix},
+		PeerName:  "vethwg" + suffix,
+	}
+}
 
 func getWeaveCmd(args []string) (string, error) {
 	cmd := exec.Command("./weave", args...)
@@ -456,6 +458,26 @@ func getIP(ID string) (net.IP, error) {
 	}
 	ip, _, err := net.ParseCIDR(string(body))
 	return ip, err
+}
+
+func releaseIP(ID string) error {
+	weaveip, err := getSwitchIP()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID), nil)
+	if err != nil {
+		return err
+	}
+	cl := &http.Client{}
+	res, err := cl.Do(req)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected HTTP status code from IP release: %d", res.StatusCode)
+	}
+	return nil
 }
 
 func makeMac(ip net.IP) string {
