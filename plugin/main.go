@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -40,7 +38,6 @@ type joinInfo struct {
 
 var (
 	network        string
-	subnet         *net.IPNet
 	resolvConfPath string
 	client         *docker.Client
 )
@@ -66,8 +63,6 @@ func main() {
 	}
 
 	InitDefaultLogging(debug)
-
-	peers := flag.Args()
 
 	var err error
 	client, err = docker.NewClient("unix:///var/run/docker.sock")
@@ -102,17 +97,6 @@ func main() {
 	listener, err = net.Listen("unix", address)
 	if err != nil {
 		Error.Fatalf("[plugin] Unable to listen on %s: %s", address, err)
-	}
-
-	sub := "10.2.0.0/16"
-
-	_, subnet, err = net.ParseCIDR(sub)
-	if err != nil {
-		Error.Fatalf("Invalid subnet CIDR %s", sub)
-	}
-	weaveArgs := []string{"launch", "-iprange", subnet.String()}
-	if err = runWeaveCmd(append(weaveArgs, peers...)); err != nil {
-		Error.Fatal("Problem launching Weave: " + err.Error())
 	}
 
 	if err = http.Serve(listener, router); err != nil {
@@ -202,10 +186,6 @@ func deleteNetwork(w http.ResponseWriter, r *http.Request) {
 		errorResponsef(w, "Network %s not found", delete.NetworkID)
 		return
 	}
-	if _, err := getWeaveCmd([]string{"stop"}); err != nil {
-		sendError(w, "Unable to stop weave: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
 	network = ""
 	emptyResponse(w)
 	Info.Printf("Destroy network %s", delete.NetworkID)
@@ -251,14 +231,11 @@ func createEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
 		return
 	}
-	prefix, _ := subnet.Mask.Size()
-	mac := makeMac(ip)
+
+	mac := makeMac(ip.IP)
 
 	respIface := &iface{
-		Address: (&net.IPNet{
-			ip,
-			net.CIDRMask(prefix, 32),
-		}).String(),
+		Address:    ip.String(),
 		MacAddress: mac,
 	}
 	resp := &endpointResponse{
@@ -404,33 +381,6 @@ func vethPair(suffix string) *netlink.Veth {
 	}
 }
 
-func getWeaveCmd(args []string) (string, error) {
-	cmd := exec.Command("./weave", args...)
-	cmd.Env = []string{"PATH=/usr/bin:/usr/local/bin", "WEAVE_DEBUG=true"}
-	var buf bytes.Buffer
-	cmd.Stderr = &buf
-	out, err := cmd.Output()
-	if err != nil {
-		Warning.Print(buf.String())
-	}
-	return string(out), err
-}
-
-func runWeaveCmd(args []string) error {
-	cmd := exec.Command("./weave", append([]string{"--local"}, args...)...)
-	cmd.Env = []string{
-		"PROCFS=/hostproc",
-		"PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/bin",
-		"WEAVE_DEBUG=true"}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		Warning.Print(err.Error())
-	}
-	return err
-}
-
 func getSwitchIP() (string, error) {
 	info, err := client.InspectContainer(WeaveContainer)
 	if err != nil {
@@ -440,7 +390,7 @@ func getSwitchIP() (string, error) {
 }
 
 // assumed to be in the subnet
-func getIP(ID string) (net.IP, error) {
+func getIP(ID string) (*net.IPNet, error) {
 	weaveip, err := getSwitchIP()
 	if err != nil {
 		return nil, err
@@ -456,8 +406,9 @@ func getIP(ID string) (net.IP, error) {
 	if err != nil {
 		return nil, err
 	}
-	ip, _, err := net.ParseCIDR(string(body))
-	return ip, err
+	ip, ipnet, err := net.ParseCIDR(string(body))
+	ipnet.IP = ip
+	return ipnet, err
 }
 
 func releaseIP(ID string) error {
