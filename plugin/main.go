@@ -12,14 +12,17 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
-	MethodReceiver = "NetworkDriver"
-	WeaveContainer = "weave"
-	WeaveBridge    = "weave"
+	MethodReceiver    = "NetworkDriver"
+	WeaveContainer    = "weave"
+	WeaveBridge       = "weave"
+	WeaveDNSContainer = "weavedns"
 )
 
 var version = "(unreleased version)"
@@ -225,7 +228,7 @@ func createEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip, err := getIP(endID)
+	ip, err := ipamOp(endID, "POST")
 	if err != nil {
 		Warning.Printf("Error allocating IP:", err)
 		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
@@ -244,6 +247,16 @@ func createEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	Debug.Printf("Create: %+v", &resp)
 	objectResponse(w, resp)
+
+	domainname, ok := create.Options["io.docker.network.domainname"]
+	if ok && domainname.(string) == "weave.local" {
+		hostname := create.Options["io.docker.network.hostname"]
+		fqdn := fmt.Sprintf("%s.%s", hostname, domainname)
+		if err := registerWithDNS(endID, fqdn, ip); err != nil {
+			Warning.Printf("unable to register with DNS: %s", err)
+		}
+	}
+
 	Info.Printf("Create endpoint %s %+v", endID, resp)
 }
 
@@ -259,10 +272,13 @@ func deleteEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Debug.Printf("Delete endpoint request: %+v", &delete)
+	emptyResponse(w)
+	if err := deregisterWithDNS(delete.EndpointID); err != nil {
+		Warning.Printf("unable to deregister with DNS: %s", err)
+	}
 	if err := releaseIP(delete.EndpointID); err != nil {
 		Warning.Printf("error releasing IP: %s", err)
 	}
-	emptyResponse(w)
 	Info.Printf("Delete endpoint %s", delete.EndpointID)
 }
 
@@ -381,38 +397,47 @@ func vethPair(suffix string) *netlink.Veth {
 	}
 }
 
-func getSwitchIP() (string, error) {
-	info, err := client.InspectContainer(WeaveContainer)
+func getContainerBridgeIP(nameOrID string) (string, error) {
+	info, err := client.InspectContainer(nameOrID)
 	if err != nil {
 		return "", err
 	}
 	return info.NetworkSettings.IPAddress, nil
 }
 
-// assumed to be in the subnet
-func getIP(ID string) (*net.IPNet, error) {
-	weaveip, err := getSwitchIP()
+func ipamOp(ID string, op string) (*net.IPNet, error) {
+	weaveip, err := getContainerBridgeIP(WeaveContainer)
 	if err != nil {
 		return nil, err
 	}
-	res, err := http.Post(fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID), "", nil)
+
+	var res *http.Response
+	url := fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID)
+	if op == "POST" {
+		res, err = http.Post(url, "", nil)
+	} else if op == "GET" {
+		res, err = http.Get(url)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Received status %d from IPAM", res.StatusCode)
+		return nil, fmt.Errorf("received status %d from IPAM", res.StatusCode)
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
 	ip, ipnet, err := net.ParseCIDR(string(body))
-	ipnet.IP = ip
+	if err == nil {
+		ipnet.IP = ip
+	}
 	return ipnet, err
 }
 
 func releaseIP(ID string) error {
-	weaveip, err := getSwitchIP()
+	weaveip, err := getContainerBridgeIP(WeaveContainer)
 	if err != nil {
 		return err
 	}
@@ -437,4 +462,56 @@ func makeMac(ip net.IP) string {
 	hw[1] = 0x42
 	copy(hw[2:], ip.To4())
 	return hw.String()
+}
+
+func registerWithDNS(endpointID string, fqdn string, ip *net.IPNet) error {
+	dnsip, err := getContainerBridgeIP(WeaveDNSContainer)
+	if err != nil {
+		return fmt.Errorf("nameserver not available: %s", err)
+	}
+	data := url.Values{}
+	data.Add("fqdn", fqdn)
+
+	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:6785/name/%s/%s", dnsip, endpointID, ip.IP.String()), strings.NewReader(data.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	cl := &http.Client{}
+	res, err := cl.Do(req)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("non-OK status from nameserver: %d", res.StatusCode)
+	}
+	return nil
+}
+
+func deregisterWithDNS(endpointID string) error {
+	dnsip, err := getContainerBridgeIP(WeaveDNSContainer)
+	if err != nil {
+		return fmt.Errorf("nameserver not available: %s", err)
+	}
+
+	ip, err := ipamOp(endpointID, "GET")
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:6785/name/%s/%s", dnsip, endpointID, ip.IP.String()), nil)
+	if err != nil {
+		return err
+	}
+
+	cl := &http.Client{}
+	res, err := cl.Do(req)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("non-OK status from nameserver: %d", res.StatusCode)
+	}
+	return nil
 }
