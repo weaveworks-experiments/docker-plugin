@@ -197,7 +197,7 @@ type endpointCreate struct {
 type iface struct {
 	ID         int
 	SrcName    string
-	DstName    string
+	DstPrefix  string
 	Address    string
 	MacAddress string
 }
@@ -362,9 +362,9 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ifname := &iface{
-		SrcName: local.PeerName,
-		DstName: "ethwe",
-		ID:      0,
+		SrcName:   local.PeerName,
+		DstPrefix: "ethwe",
+		ID:        0,
 	}
 	routeToDNS := &staticRoute{
 		Destination: driver.nameserver + "/32",
