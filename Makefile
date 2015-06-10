@@ -10,7 +10,7 @@ all: $(PLUGIN_EXPORT)
 
 PLUGIN_VERSION=git-$(shell git rev-parse --short=12 HEAD)
 
-$(PLUGIN_EXE): plugin/main.go
+$(PLUGIN_EXE): plugin/main.go plugin/driver/*.go
 	go get -tags netgo ./$(@D)
 	go build -ldflags "-extldflags \"-static\" -X main.version $(PLUGIN_VERSION)" -tags netgo -o $@ ./$(@D)
 	@strings $@ | grep cgo_stub\\\.go >/dev/null || { \
