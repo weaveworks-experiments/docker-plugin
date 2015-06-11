@@ -2,6 +2,7 @@ package driver
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fsouza/go-dockerclient"
 	. "github.com/weaveworks/weave/common"
@@ -68,7 +69,7 @@ func (w *watcher) ContainerStart(id string) {
 		return
 	}
 	// FIXME: check that it's on our network; but, the docker client lib doesn't know about .NetworkID
-	if info.Config.Domainname == WeaveDomain {
+	if isSubdomain(info.Config.Domainname, WeaveDomain) {
 		// one of ours
 		ip := info.NetworkSettings.IPAddress
 		fqdn := fmt.Sprintf("%s.%s", info.Config.Hostname, info.Config.Domainname)
@@ -85,10 +86,16 @@ func (w *watcher) ContainerDied(id string) {
 		Warning.Printf("error inspecting container: %s", err)
 		return
 	}
-	if info.Config.Domainname == WeaveDomain {
+	if isSubdomain(info.Config.Domainname, WeaveDomain) {
 		ip := info.NetworkSettings.IPAddress
 		if err := w.deregisterWithDNS(id, ip); err != nil {
 			Warning.Printf("unable to deregister with weaveDNS: %s", err)
 		}
 	}
+}
+
+// Cheap and cheerful way to check x is, or is a subdomain, of
+// y. Neither are expected to start with a '.'.
+func isSubdomain(x string, y string) bool {
+	return x == y || strings.HasSuffix(x, "."+y)
 }
