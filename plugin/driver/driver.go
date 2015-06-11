@@ -229,7 +229,7 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip, err := driver.ipamOp(endID, "POST")
+	ip, err := driver.allocateIP(endID)
 	if err != nil {
 		Warning.Printf("Error allocating IP:", err)
 		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
@@ -410,58 +410,6 @@ func vethPair(suffix string) *netlink.Veth {
 
 func (driver *driver) resolvConfPath() string {
 	return filepath.Join(driver.confDir, "resolv.conf")
-}
-
-func (driver *driver) ipamOp(ID string, op string) (*net.IPNet, error) {
-	weaveip, err := driver.getContainerBridgeIP(WeaveContainer)
-	Debug.Printf("IPAM operation %s for %s", op, ID)
-	if err != nil {
-		return nil, err
-	}
-
-	var res *http.Response
-	url := fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID)
-	if op == "POST" {
-		res, err = http.Post(url, "", nil)
-	} else if op == "GET" {
-		res, err = http.Get(url)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("received status %d from IPAM", res.StatusCode)
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	ip, ipnet, err := net.ParseCIDR(string(body))
-	if err == nil {
-		ipnet.IP = ip
-	}
-	return ipnet, err
-}
-
-func (driver *driver) releaseIP(ID string) error {
-	weaveip, err := driver.getContainerBridgeIP(WeaveContainer)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID), nil)
-	if err != nil {
-		return err
-	}
-	cl := &http.Client{}
-	res, err := cl.Do(req)
-	if err != nil {
-		return err
-	}
-	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("unexpected HTTP status code from IP release: %d", res.StatusCode)
-	}
-	return nil
 }
 
 func makeMac(ip net.IP) string {
