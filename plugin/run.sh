@@ -20,9 +20,9 @@ echo Run weave
 weaveexec launch -iprange 10.20.0.0/16 $WEAVE_ARGS
 
 echo Run weaveDNS
-weaveexec launch-dns 10.254.254.1/24 $WEAVE_DNS_ARGS
+weaveexec launch-dns 10.254.254.1/24 --watch=false $WEAVE_DNS_ARGS
 
-echo Give weaveDNS a stable, local IP
+echo Make weaved containers routable from weaveDNS
 WEAVEDNS_PID=$(docker inspect --format='{{ .State.Pid }}' weavedns)
 [ ! -d /var/run/netns ] && sudo mkdir -p /var/run/netns
 sudo ln -s /proc/$WEAVEDNS_PID/ns/net /var/run/netns/$WEAVEDNS_PID
