@@ -38,6 +38,7 @@ type driver struct {
 	confDir    string
 	nameserver string
 	client     *docker.Client
+	watcher    Watcher
 }
 
 func New(version string, nameserver string, confDir string) (Driver, error) {
@@ -51,11 +52,17 @@ func New(version string, nameserver string, confDir string) (Driver, error) {
 		return nil, fmt.Errorf(`could not parse nameserver IP "%s"`, nameserver)
 	}
 
+	watcher, err := NewWatcher(client)
+	if err != nil {
+		return nil, err
+	}
+
 	return &driver{
 		version:    version,
 		nameserver: nameserver,
 		client:     client,
 		confDir:    confDir,
+		watcher:    watcher,
 	}, nil
 }
 
@@ -163,6 +170,7 @@ func (driver *driver) createNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	driver.network = create.NetworkID
+	driver.watcher.WatchNetwork(driver.network)
 	emptyResponse(w)
 	Info.Printf("Create network %s", driver.network)
 }
@@ -183,6 +191,7 @@ func (driver *driver) deleteNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	driver.network = ""
+	driver.watcher.UnwatchNetwork(delete.NetworkID)
 	emptyResponse(w)
 	Info.Printf("Destroy network %s", delete.NetworkID)
 }
@@ -227,6 +236,7 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
 		return
 	}
+	Debug.Printf("Got IP from IPAM %s", ip.String())
 
 	mac := makeMac(ip.IP)
 
@@ -414,6 +424,7 @@ func vethPair(suffix string) *netlink.Veth {
 }
 
 func (driver *driver) getContainerBridgeIP(nameOrID string) (string, error) {
+	Debug.Printf("Getting IP for container %s", nameOrID)
 	info, err := driver.client.InspectContainer(nameOrID)
 	if err != nil {
 		return "", err
@@ -427,6 +438,7 @@ func (driver *driver) resolvConfPath() string {
 
 func (driver *driver) ipamOp(ID string, op string) (*net.IPNet, error) {
 	weaveip, err := driver.getContainerBridgeIP(WeaveContainer)
+	Debug.Printf("IPAM operation %s for %s", op, ID)
 	if err != nil {
 		return nil, err
 	}
