@@ -4,11 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/docker/libnetwork/types"
 
@@ -26,6 +23,7 @@ const (
 )
 
 type Driver interface {
+	SetNameserver(string) error
 	Listen(string) error
 }
 
@@ -33,20 +31,14 @@ type driver struct {
 	dockerer
 	version    string
 	network    string
-	confDir    string
 	nameserver string
 	watcher    Watcher
 }
 
-func New(version string, nameserver string, confDir string) (Driver, error) {
+func New(version string) (Driver, error) {
 	client, err := docker.NewClient("unix:///var/run/docker.sock")
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to docker: %s", err)
-	}
-
-	nameserverIP := net.ParseIP(nameserver)
-	if nameserverIP == nil {
-		return nil, fmt.Errorf(`could not parse nameserver IP "%s"`, nameserver)
 	}
 
 	watcher, err := NewWatcher(client)
@@ -58,11 +50,17 @@ func New(version string, nameserver string, confDir string) (Driver, error) {
 		dockerer: dockerer{
 			client: client,
 		},
-		version:    version,
-		nameserver: nameserver,
-		confDir:    confDir,
-		watcher:    watcher,
+		version: version,
+		watcher: watcher,
 	}, nil
+}
+
+func (driver *driver) SetNameserver(nameserver string) error {
+	if net.ParseIP(nameserver) == nil {
+		return fmt.Errorf(`cannot parse IP address "%s"`, nameserver)
+	}
+	driver.nameserver = nameserver
+	return nil
 }
 
 func (driver *driver) Listen(socket string) error {
@@ -83,9 +81,6 @@ func (driver *driver) Listen(socket string) error {
 	handleMethod("EndpointOperInfo", driver.infoEndpoint)
 	handleMethod("Join", driver.joinEndpoint)
 	handleMethod("Leave", driver.leaveEndpoint)
-
-	// Put the docker bridge IP into a resolv.conf to be used later.
-	ioutil.WriteFile(driver.resolvConfPath(), []byte("nameserver "+driver.nameserver), os.ModePerm)
 
 	var (
 		listener net.Listener
@@ -361,16 +356,18 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 		DstPrefix: "ethwe",
 		ID:        0,
 	}
-	routeToDNS := &staticRoute{
-		Destination: driver.nameserver + "/32",
-		RouteType:   types.CONNECTED,
-		NextHop:     "",
-		InterfaceID: 0,
-	}
+
 	res := &joinResponse{
 		InterfaceNames: []*iface{ifname},
-		ResolvConfPath: driver.resolvConfPath(),
-		StaticRoutes:   []*staticRoute{routeToDNS},
+	}
+	if driver.nameserver != "" {
+		routeToDNS := &staticRoute{
+			Destination: driver.nameserver + "/32",
+			RouteType:   types.CONNECTED,
+			NextHop:     "",
+			InterfaceID: 0,
+		}
+		res.StaticRoutes = []*staticRoute{routeToDNS}
 	}
 
 	objectResponse(w, res)
@@ -406,10 +403,6 @@ func vethPair(suffix string) *netlink.Veth {
 		LinkAttrs: netlink.LinkAttrs{Name: "vethwl" + suffix},
 		PeerName:  "vethwg" + suffix,
 	}
-}
-
-func (driver *driver) resolvConfPath() string {
-	return filepath.Join(driver.confDir, "resolv.conf")
 }
 
 func makeMac(ip net.IP) string {
