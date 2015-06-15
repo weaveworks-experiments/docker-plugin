@@ -33,9 +33,4 @@ echo Run weave plugin
 sudo rm -f /usr/share/docker/plugins/weave.sock
 docker rm -f weaveplugin || true
 
-docker run --name=weaveplugin --privileged -d \
-    --net=host -v /var/run/docker.sock:/var/run/docker.sock \
-    -v /usr/share/docker/plugins:/usr/share/docker/plugins \
-    -v /var/run/weave-plugin:/var/run/weave-plugin \
-    -v /proc:/hostproc \
-    weaveworks/plugin --nameserver=10.254.254.1 --socket=/usr/share/docker/plugins/weave.sock "$@"
+`dirname $0`/start-plugin.sh --nameserver=10.254.254.1 "$@"
