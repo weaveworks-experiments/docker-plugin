@@ -226,7 +226,7 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	ip, err := driver.allocateIP(endID)
 	if err != nil {
-		Warning.Printf("Error allocating IP:", err)
+		Warning.Printf("Error allocating IP: %s", err)
 		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
 		return
 	}

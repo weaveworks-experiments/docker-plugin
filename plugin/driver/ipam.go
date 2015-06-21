@@ -17,7 +17,9 @@ func (d *dockerer) ipamOp(ID string, op string) (*net.IPNet, error) {
 	}
 
 	var res *http.Response
-	url := fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID)
+
+	url := fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ipamID(ID))
+	Debug.Printf("Attempting to %s to %s", op, url)
 	if op == "POST" {
 		res, err = http.Post(url, "", nil)
 	} else if op == "GET" {
@@ -58,7 +60,7 @@ func (d *dockerer) releaseIP(ID string) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ID), nil)
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ipamID(ID)), nil)
 	if err != nil {
 		return err
 	}
@@ -71,4 +73,12 @@ func (d *dockerer) releaseIP(ID string) error {
 		return fmt.Errorf("unexpected HTTP status code from IP release: %d", res.StatusCode)
 	}
 	return nil
+}
+
+// If something looking like a container ID is supplied to IPAM, it
+// will try to check that it's running, and return nothing (and empty
+// string) if it's not. So I make sure it doesn't look like a
+// container ID by including non-hex characters.
+func ipamID(ID string) string {
+	return "endpoint:" + ID
 }
