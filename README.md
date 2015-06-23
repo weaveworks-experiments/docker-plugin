@@ -54,6 +54,24 @@ There are some tricks to bear in mind when using the driver plugin for
 the minute. Ideally these will disappear as the driver interface is
 refined, Weave is enhanced, and so on.
 
+### Only one network at a time
+
+It would be fairly natural for this plugin to implement networks by
+giving each a subnet. However, Weave's IP address management does not
+allocate subnets (although it can allocate an IP address on a _given_
+subnet). As a result, for the moment you can have only one network at
+a time.
+
+### Recovery after restarts
+
+There is no way provided by libnetwork for the plugin to get its
+current configuration after a restart; so, it is fairly easy to get
+into a situation in which Docker knows about an object (e.g., a
+network) that the plugin does not.
+
+As a workaround, you can `rm` objects before creating them, to make
+sure the plugin is told about the state.
+
 ### WeaveDNS reachability
 
 When using Weave "classic", your containers generally end up with two
