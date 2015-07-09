@@ -31,21 +31,21 @@ func main() {
 		os.Exit(0)
 	}
 
-	InitDefaultLogging(debug)
+	EnableDebugLogging(debug)
 
 	var d driver.Driver
 	d, err := driver.New(version)
 	if err != nil {
-		Error.Fatalf("unable to create driver: %s", err)
+		Log.Fatalf("unable to create driver: %s", err)
 	}
 
 	if nameserver != "" {
 		if err := d.SetNameserver(nameserver); err != nil {
-			Error.Fatalf("could not set nameserver: %s", err)
+			Log.Fatalf("could not set nameserver: %s", err)
 		}
 	}
 
 	if err := d.Listen(address); err != nil {
-		Error.Fatal(err)
+		Log.Fatal(err)
 	}
 }

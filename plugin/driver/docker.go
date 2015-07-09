@@ -10,7 +10,7 @@ type dockerer struct {
 }
 
 func (d *dockerer) getContainerBridgeIP(nameOrID string) (string, error) {
-	Debug.Printf("Getting IP for container %s", nameOrID)
+	Log.Debugf("Getting IP for container %s", nameOrID)
 	info, err := d.InspectContainer(nameOrID)
 	if err != nil {
 		return "", err

@@ -52,20 +52,20 @@ func NewWatcher(client *docker.Client) (Watcher, error) {
 }
 
 func (w *watcher) WatchNetwork(uuid string) {
-	Debug.Printf("Watch network %s", uuid)
+	Log.Debugf("Watch network %s", uuid)
 	w.networks[uuid] = true
 }
 
 func (w *watcher) UnwatchNetwork(uuid string) {
-	Debug.Printf("Unwatch network %s", uuid)
+	Log.Debugf("Unwatch network %s", uuid)
 	delete(w.networks, uuid)
 }
 
 func (w *watcher) ContainerStart(id string) {
-	Debug.Printf("Container started %s", id)
+	Log.Debugf("Container started %s", id)
 	info, err := w.InspectContainer(id)
 	if err != nil {
-		Warning.Printf("error inspecting container: %s", err)
+		Log.Warningf("error inspecting container: %s", err)
 		return
 	}
 	// FIXME: check that it's on our network; but, the docker client lib doesn't know about .NetworkID
@@ -74,22 +74,22 @@ func (w *watcher) ContainerStart(id string) {
 		ip := info.NetworkSettings.IPAddress
 		fqdn := fmt.Sprintf("%s.%s", info.Config.Hostname, info.Config.Domainname)
 		if err := w.registerWithDNS(id, fqdn, ip); err != nil {
-			Warning.Printf("unable to register with weaveDNS: %s", err)
+			Log.Warningf("unable to register with weaveDNS: %s", err)
 		}
 	}
 }
 
 func (w *watcher) ContainerDied(id string) {
-	Debug.Printf("Container died %s", id)
+	Log.Debugf("Container died %s", id)
 	info, err := w.InspectContainer(id)
 	if err != nil {
-		Warning.Printf("error inspecting container: %s", err)
+		Log.Warningf("error inspecting container: %s", err)
 		return
 	}
 	if isSubdomain(info.Config.Domainname, WeaveDomain) {
 		ip := info.NetworkSettings.IPAddress
 		if err := w.deregisterWithDNS(id, ip); err != nil {
-			Warning.Printf("unable to deregister with weaveDNS: %s", err)
+			Log.Warningf("unable to deregister with weaveDNS: %s", err)
 		}
 	}
 }
