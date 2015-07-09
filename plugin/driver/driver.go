@@ -96,12 +96,12 @@ func (driver *driver) Listen(socket string) error {
 }
 
 func notFound(w http.ResponseWriter, r *http.Request) {
-	Warning.Printf("[plugin] Not found: %+v", r)
+	Log.Warningf("[plugin] Not found: %+v", r)
 	http.NotFound(w, r)
 }
 
 func sendError(w http.ResponseWriter, msg string, code int) {
-	Error.Printf("%d %s", code, msg)
+	Log.Errorf("%d %s", code, msg)
 	http.Error(w, msg, code)
 }
 
@@ -133,11 +133,11 @@ func (driver *driver) handshake(w http.ResponseWriter, r *http.Request) {
 		[]string{"NetworkDriver"},
 	})
 	if err != nil {
-		Error.Fatal("handshake encode:", err)
+		Log.Fatal("handshake encode:", err)
 		sendError(w, "encode error", http.StatusInternalServerError)
 		return
 	}
-	Info.Printf("Handshake completed")
+	Log.Infof("Handshake completed")
 }
 
 func (driver *driver) status(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +156,7 @@ func (driver *driver) createNetwork(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Create network request %+v", &create)
+	Log.Debugf("Create network request %+v", &create)
 
 	if driver.network != "" {
 		errorResponsef(w, "You get just one network, and you already made %s", driver.network)
@@ -166,7 +166,7 @@ func (driver *driver) createNetwork(w http.ResponseWriter, r *http.Request) {
 	driver.network = create.NetworkID
 	driver.watcher.WatchNetwork(driver.network)
 	emptyResponse(w)
-	Info.Printf("Create network %s", driver.network)
+	Log.Infof("Create network %s", driver.network)
 }
 
 type networkDelete struct {
@@ -179,7 +179,7 @@ func (driver *driver) deleteNetwork(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Delete network request: %+v", &delete)
+	Log.Debugf("Delete network request: %+v", &delete)
 	if delete.NetworkID != driver.network {
 		errorResponsef(w, "Network %s not found", delete.NetworkID)
 		return
@@ -187,7 +187,7 @@ func (driver *driver) deleteNetwork(w http.ResponseWriter, r *http.Request) {
 	driver.network = ""
 	driver.watcher.UnwatchNetwork(delete.NetworkID)
 	emptyResponse(w)
-	Info.Printf("Destroy network %s", delete.NetworkID)
+	Log.Infof("Destroy network %s", delete.NetworkID)
 }
 
 type endpointCreate struct {
@@ -215,7 +215,7 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Create endpoint request %+v", &create)
+	Log.Debugf("Create endpoint request %+v", &create)
 	netID := create.NetworkID
 	endID := create.EndpointID
 
@@ -226,11 +226,11 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	ip, err := driver.allocateIP(endID)
 	if err != nil {
-		Warning.Printf("Error allocating IP: %s", err)
+		Log.Warningf("Error allocating IP: %s", err)
 		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
 		return
 	}
-	Debug.Printf("Got IP from IPAM %s", ip.String())
+	Log.Debugf("Got IP from IPAM %s", ip.String())
 
 	mac := makeMac(ip.IP)
 
@@ -243,7 +243,7 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	objectResponse(w, resp)
-	Info.Printf("Create endpoint %s %+v", endID, resp)
+	Log.Infof("Create endpoint %s %+v", endID, resp)
 }
 
 type endpointDelete struct {
@@ -257,12 +257,12 @@ func (driver *driver) deleteEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Delete endpoint request: %+v", &delete)
+	Log.Debugf("Delete endpoint request: %+v", &delete)
 	emptyResponse(w)
 	if err := driver.releaseIP(delete.EndpointID); err != nil {
-		Warning.Printf("error releasing IP: %s", err)
+		Log.Warningf("error releasing IP: %s", err)
 	}
-	Info.Printf("Delete endpoint %s", delete.EndpointID)
+	Log.Infof("Delete endpoint %s", delete.EndpointID)
 }
 
 type endpointInfoReq struct {
@@ -280,9 +280,9 @@ func (driver *driver) infoEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Endpoint info request: %+v", &info)
+	Log.Debugf("Endpoint info request: %+v", &info)
 	objectResponse(w, &endpointInfo{Value: map[string]interface{}{}})
-	Info.Printf("Endpoint info %s", info.EndpointID)
+	Log.Infof("Endpoint info %s", info.EndpointID)
 }
 
 type joinInfo struct {
@@ -321,27 +321,27 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Join request: %+v", &j)
+	Log.Debugf("Join request: %+v", &j)
 
 	endID := j.EndpointID
 
 	// create and attach local name to the bridge
 	local := vethPair(endID[:5])
 	if err := netlink.LinkAdd(local); err != nil {
-		Error.Print(err)
+		Log.Error(err)
 		errorResponsef(w, "could not create veth pair")
 		return
 	}
 
 	var bridge *netlink.Bridge
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		Error.Print(err)
+		Log.Error(err)
 		errorResponsef(w, `bridge "%s" not present`, WeaveBridge)
 		return
 	} else {
 		var ok bool
 		if bridge, ok = maybeBridge.(*netlink.Bridge); !ok {
-			Error.Printf("%s is %+v", WeaveBridge, maybeBridge)
+			Log.Errorf("%s is %+v", WeaveBridge, maybeBridge)
 			errorResponsef(w, `device "%s" not a bridge`, WeaveBridge)
 			return
 		}
@@ -371,7 +371,7 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	objectResponse(w, res)
-	Info.Printf("Join endpoint %s:%s to %s", j.NetworkID, j.EndpointID, j.SandboxKey)
+	Log.Infof("Join endpoint %s:%s to %s", j.NetworkID, j.EndpointID, j.SandboxKey)
 }
 
 type leave struct {
@@ -386,14 +386,14 @@ func (driver *driver) leaveEndpoint(w http.ResponseWriter, r *http.Request) {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
 	}
-	Debug.Printf("Leave request: %+v", &l)
+	Log.Debugf("Leave request: %+v", &l)
 
 	local := vethPair(l.EndpointID[:5])
 	if err := netlink.LinkDel(local); err != nil {
-		Warning.Printf("unable to delete veth on leave: %s", err)
+		Log.Warningf("unable to delete veth on leave: %s", err)
 	}
 	emptyResponse(w)
-	Info.Printf("Leave %s:%s", l.NetworkID, l.EndpointID)
+	Log.Infof("Leave %s:%s", l.NetworkID, l.EndpointID)
 }
 
 // ===

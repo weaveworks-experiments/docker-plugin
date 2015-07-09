@@ -11,7 +11,7 @@ import (
 
 func (d *dockerer) ipamOp(ID string, op string) (*net.IPNet, error) {
 	weaveip, err := d.getContainerBridgeIP(WeaveContainer)
-	Debug.Printf("IPAM operation %s for %s", op, ID)
+	Log.Debugf("IPAM operation %s for %s", op, ID)
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +19,7 @@ func (d *dockerer) ipamOp(ID string, op string) (*net.IPNet, error) {
 	var res *http.Response
 
 	url := fmt.Sprintf("http://%s:6784/ip/%s", weaveip, ipamID(ID))
-	Debug.Printf("Attempting to %s to %s", op, url)
+	Log.Debugf("Attempting to %s to %s", op, url)
 	if op == "POST" {
 		res, err = http.Post(url, "", nil)
 	} else if op == "GET" {
