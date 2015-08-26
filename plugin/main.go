@@ -31,7 +31,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	EnableDebugLogging(debug)
+	if debug {
+		SetLogLevel("debug")
+	}
 
 	var d driver.Driver
 	d, err := driver.New(version)
