@@ -74,6 +74,7 @@ func (driver *driver) Listen(socket string) error {
 		router.Methods("POST").Path(fmt.Sprintf("/%s.%s", MethodReceiver, method)).HandlerFunc(h)
 	}
 
+	handleMethod("GetCapabilities", driver.getCapabilities)
 	handleMethod("CreateNetwork", driver.createNetwork)
 	handleMethod("DeleteNetwork", driver.deleteNetwork)
 	handleMethod("CreateEndpoint", driver.createEndpoint)
@@ -142,6 +143,13 @@ func (driver *driver) handshake(w http.ResponseWriter, r *http.Request) {
 
 func (driver *driver) status(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, fmt.Sprintln("weave plugin", driver.version))
+}
+
+var caps = map[string]string{"Scope": "global"}
+
+func (driver *driver) getCapabilities(w http.ResponseWriter, r *http.Request) {
+	objectResponse(w, caps)
+	Log.Debugf("Get capabilities: responded with %+v", caps)
 }
 
 type networkCreate struct {
