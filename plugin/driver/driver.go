@@ -24,7 +24,7 @@ const (
 
 type Driver interface {
 	SetNameserver(string) error
-	Listen(string) error
+	Listen(net.Listener) error
 }
 
 type driver struct {
@@ -63,7 +63,7 @@ func (driver *driver) SetNameserver(nameserver string) error {
 	return nil
 }
 
-func (driver *driver) Listen(socket string) error {
+func (driver *driver) Listen(socket net.Listener) error {
 	router := mux.NewRouter()
 	router.NotFoundHandler = http.HandlerFunc(notFound)
 
@@ -83,17 +83,7 @@ func (driver *driver) Listen(socket string) error {
 	handleMethod("Join", driver.joinEndpoint)
 	handleMethod("Leave", driver.leaveEndpoint)
 
-	var (
-		listener net.Listener
-		err      error
-	)
-
-	listener, err = net.Listen("unix", socket)
-	if err != nil {
-		return err
-	}
-
-	return http.Serve(listener, router)
+	return http.Serve(socket, router)
 }
 
 func notFound(w http.ResponseWriter, r *http.Request) {
@@ -134,8 +124,8 @@ func (driver *driver) handshake(w http.ResponseWriter, r *http.Request) {
 		[]string{"NetworkDriver"},
 	})
 	if err != nil {
-		Log.Fatal("handshake encode:", err)
 		sendError(w, "encode error", http.StatusInternalServerError)
+		Log.Error("handshake encode:", err)
 		return
 	}
 	Log.Infof("Handshake completed")

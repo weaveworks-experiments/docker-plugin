@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-
+	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/weaveworks/docker-plugin/plugin/driver"
 	. "github.com/weaveworks/weave/common"
@@ -48,7 +50,30 @@ func main() {
 		}
 	}
 
-	if err := d.Listen(address); err != nil {
+	var listener net.Listener
+
+	listener, err = net.Listen("unix", address)
+	if err != nil {
 		Log.Fatal(err)
+	}
+	defer listener.Close()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, os.Kill, syscall.SIGTERM)
+
+	endChan := make(chan error, 1)
+	go func() {
+		endChan <- d.Listen(listener)
+	}()
+
+	select {
+	case sig := <-sigChan:
+		Log.Debugf("Caught signal %s; shutting down", sig)
+	case err := <-endChan:
+		if err != nil {
+			Log.Errorf("Error from listener: ", err)
+			listener.Close()
+			os.Exit(1)
+		}
 	}
 }
