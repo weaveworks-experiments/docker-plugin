@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/docker/libnetwork/drivers/remote/api"
 	"github.com/docker/libnetwork/types"
 
 	. "github.com/weaveworks/weave/common"
@@ -135,20 +136,17 @@ func (driver *driver) status(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, fmt.Sprintln("weave plugin", driver.version))
 }
 
-var caps = map[string]string{"Scope": "global"}
+var caps = &api.GetCapabilityResponse{
+	Scope: "global",
+}
 
 func (driver *driver) getCapabilities(w http.ResponseWriter, r *http.Request) {
 	objectResponse(w, caps)
 	Log.Debugf("Get capabilities: responded with %+v", caps)
 }
 
-type networkCreate struct {
-	NetworkID string
-	Options   map[string]interface{}
-}
-
 func (driver *driver) createNetwork(w http.ResponseWriter, r *http.Request) {
-	var create networkCreate
+	var create api.CreateNetworkRequest
 	err := json.NewDecoder(r.Body).Decode(&create)
 	if err != nil {
 		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
@@ -167,12 +165,8 @@ func (driver *driver) createNetwork(w http.ResponseWriter, r *http.Request) {
 	Log.Infof("Create network %s", driver.network)
 }
 
-type networkDelete struct {
-	NetworkID string
-}
-
 func (driver *driver) deleteNetwork(w http.ResponseWriter, r *http.Request) {
-	var delete networkDelete
+	var delete api.DeleteNetworkRequest
 	if err := json.NewDecoder(r.Body).Decode(&delete); err != nil {
 		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
 		return
@@ -188,27 +182,8 @@ func (driver *driver) deleteNetwork(w http.ResponseWriter, r *http.Request) {
 	Log.Infof("Destroy network %s", delete.NetworkID)
 }
 
-type endpointCreate struct {
-	NetworkID  string
-	EndpointID string
-	Interfaces []*iface
-	Options    map[string]interface{}
-}
-
-type iface struct {
-	ID         int
-	SrcName    string
-	DstPrefix  string
-	Address    string
-	MacAddress string
-}
-
-type endpointResponse struct {
-	Interfaces []*iface
-}
-
 func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
-	var create endpointCreate
+	var create api.CreateEndpointRequest
 	if err := json.NewDecoder(r.Body).Decode(&create); err != nil {
 		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
 		return
@@ -232,25 +207,20 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	mac := makeMac(ip.IP)
 
-	respIface := &iface{
+	respIface := &api.EndpointInterface{
 		Address:    ip.String(),
 		MacAddress: mac,
 	}
-	resp := &endpointResponse{
-		Interfaces: []*iface{respIface},
+	resp := &api.CreateEndpointResponse{
+		Interface: respIface,
 	}
 
 	objectResponse(w, resp)
 	Log.Infof("Create endpoint %s %+v", endID, resp)
 }
 
-type endpointDelete struct {
-	NetworkID  string
-	EndpointID string
-}
-
 func (driver *driver) deleteEndpoint(w http.ResponseWriter, r *http.Request) {
-	var delete endpointDelete
+	var delete api.DeleteEndpointRequest
 	if err := json.NewDecoder(r.Body).Decode(&delete); err != nil {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
@@ -263,58 +233,19 @@ func (driver *driver) deleteEndpoint(w http.ResponseWriter, r *http.Request) {
 	Log.Infof("Delete endpoint %s", delete.EndpointID)
 }
 
-type endpointInfoReq struct {
-	NetworkID  string
-	EndpointID string
-}
-
-type endpointInfo struct {
-	Value map[string]interface{}
-}
-
 func (driver *driver) infoEndpoint(w http.ResponseWriter, r *http.Request) {
-	var info endpointInfoReq
+	var info api.EndpointInfoRequest
 	if err := json.NewDecoder(r.Body).Decode(&info); err != nil {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
 	}
 	Log.Debugf("Endpoint info request: %+v", &info)
-	objectResponse(w, &endpointInfo{Value: map[string]interface{}{}})
+	objectResponse(w, &api.EndpointInfoResponse{Value: map[string]interface{}{}})
 	Log.Infof("Endpoint info %s", info.EndpointID)
 }
 
-type joinInfo struct {
-	InterfaceNames []*iface
-	Gateway        string
-	GatewayIPv6    string
-	HostsPath      string
-	ResolvConfPath string
-}
-
-type join struct {
-	NetworkID  string
-	EndpointID string
-	SandboxKey string
-	Options    map[string]interface{}
-}
-
-type staticRoute struct {
-	Destination string
-	RouteType   int
-	NextHop     string
-	InterfaceID int
-}
-
-type joinResponse struct {
-	HostsPath      string
-	ResolvConfPath string
-	Gateway        string
-	InterfaceNames []*iface
-	StaticRoutes   []*staticRoute
-}
-
 func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
-	var j join
+	var j api.JoinRequest
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
@@ -349,37 +280,29 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ifname := &iface{
+	ifname := &api.InterfaceName{
 		SrcName:   local.PeerName,
 		DstPrefix: "ethwe",
-		ID:        0,
 	}
 
-	res := &joinResponse{
-		InterfaceNames: []*iface{ifname},
+	res := &api.JoinResponse{
+		InterfaceName: ifname,
 	}
 	if driver.nameserver != "" {
-		routeToDNS := &staticRoute{
+		routeToDNS := api.StaticRoute{
 			Destination: driver.nameserver + "/32",
 			RouteType:   types.CONNECTED,
 			NextHop:     "",
-			InterfaceID: 0,
 		}
-		res.StaticRoutes = []*staticRoute{routeToDNS}
+		res.StaticRoutes = []api.StaticRoute{routeToDNS}
 	}
 
 	objectResponse(w, res)
 	Log.Infof("Join endpoint %s:%s to %s", j.NetworkID, j.EndpointID, j.SandboxKey)
 }
 
-type leave struct {
-	NetworkID  string
-	EndpointID string
-	Options    map[string]interface{}
-}
-
 func (driver *driver) leaveEndpoint(w http.ResponseWriter, r *http.Request) {
-	var l leave
+	var l api.LeaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
 		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
 		return
