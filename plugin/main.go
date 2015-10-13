@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/weaveworks/docker-plugin/plugin/driver"
+	"github.com/weaveworks/docker-plugin/plugin/skel"
 	. "github.com/weaveworks/weave/common"
 )
 
@@ -38,16 +39,10 @@ func main() {
 		SetLogLevel("debug")
 	}
 
-	var d driver.Driver
-	d, err := driver.New(version)
+	var d skel.Driver
+	d, err := driver.New(version, nameserver)
 	if err != nil {
 		Log.Fatalf("unable to create driver: %s", err)
-	}
-
-	if nameserver != "" {
-		if err := d.SetNameserver(nameserver); err != nil {
-			Log.Fatalf("could not set nameserver: %s", err)
-		}
 	}
 
 	var listener net.Listener
@@ -63,7 +58,7 @@ func main() {
 
 	endChan := make(chan error, 1)
 	go func() {
-		endChan <- d.Listen(listener)
+		endChan <- skel.Listen(listener, d)
 	}()
 
 	select {

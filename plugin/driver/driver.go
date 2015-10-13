@@ -1,11 +1,8 @@
 package driver
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 
 	"github.com/docker/libnetwork/drivers/remote/api"
 	"github.com/docker/libnetwork/types"
@@ -13,20 +10,15 @@ import (
 	. "github.com/weaveworks/weave/common"
 
 	docker "github.com/fsouza/go-dockerclient"
-	"github.com/gorilla/mux"
 	"github.com/vishvananda/netlink"
+
+	"github.com/weaveworks/docker-plugin/plugin/skel"
 )
 
 const (
-	MethodReceiver = "NetworkDriver"
 	WeaveContainer = "weave"
 	WeaveBridge    = "weave"
 )
-
-type Driver interface {
-	SetNameserver(string) error
-	Listen(net.Listener) error
-}
 
 type driver struct {
 	dockerer
@@ -36,7 +28,7 @@ type driver struct {
 	watcher    Watcher
 }
 
-func New(version string) (Driver, error) {
+func New(version string, nameserver string) (skel.Driver, error) {
 	client, err := docker.NewClient("unix:///var/run/docker.sock")
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to docker: %s", err)
@@ -51,157 +43,58 @@ func New(version string) (Driver, error) {
 		dockerer: dockerer{
 			client: client,
 		},
-		version: version,
-		watcher: watcher,
+		nameserver: nameserver,
+		version:    version,
+		watcher:    watcher,
 	}, nil
 }
 
-func (driver *driver) SetNameserver(nameserver string) error {
-	if net.ParseIP(nameserver) == nil {
-		return fmt.Errorf(`cannot parse IP address "%s"`, nameserver)
-	}
-	driver.nameserver = nameserver
-	return nil
-}
-
-func (driver *driver) Listen(socket net.Listener) error {
-	router := mux.NewRouter()
-	router.NotFoundHandler = http.HandlerFunc(notFound)
-
-	router.Methods("GET").Path("/status").HandlerFunc(driver.status)
-	router.Methods("POST").Path("/Plugin.Activate").HandlerFunc(driver.handshake)
-
-	handleMethod := func(method string, h http.HandlerFunc) {
-		router.Methods("POST").Path(fmt.Sprintf("/%s.%s", MethodReceiver, method)).HandlerFunc(h)
-	}
-
-	handleMethod("GetCapabilities", driver.getCapabilities)
-	handleMethod("CreateNetwork", driver.createNetwork)
-	handleMethod("DeleteNetwork", driver.deleteNetwork)
-	handleMethod("CreateEndpoint", driver.createEndpoint)
-	handleMethod("DeleteEndpoint", driver.deleteEndpoint)
-	handleMethod("EndpointOperInfo", driver.infoEndpoint)
-	handleMethod("Join", driver.joinEndpoint)
-	handleMethod("Leave", driver.leaveEndpoint)
-
-	return http.Serve(socket, router)
-}
-
-func notFound(w http.ResponseWriter, r *http.Request) {
-	Log.Warningf("[plugin] Not found: %+v", r)
-	http.NotFound(w, r)
-}
-
-func sendError(w http.ResponseWriter, msg string, code int) {
-	Log.Errorf("%d %s", code, msg)
-	http.Error(w, msg, code)
-}
-
-func errorResponsef(w http.ResponseWriter, fmtString string, item ...interface{}) {
-	json.NewEncoder(w).Encode(map[string]string{
-		"Err": fmt.Sprintf(fmtString, item...),
-	})
-}
-
-func objectResponse(w http.ResponseWriter, obj interface{}) {
-	if err := json.NewEncoder(w).Encode(obj); err != nil {
-		sendError(w, "Could not JSON encode response", http.StatusInternalServerError)
-		return
-	}
-}
-
-func emptyResponse(w http.ResponseWriter) {
-	json.NewEncoder(w).Encode(map[string]string{})
-}
-
 // === protocol handlers
-
-type handshakeResp struct {
-	Implements []string
-}
-
-func (driver *driver) handshake(w http.ResponseWriter, r *http.Request) {
-	err := json.NewEncoder(w).Encode(&handshakeResp{
-		[]string{"NetworkDriver"},
-	})
-	if err != nil {
-		sendError(w, "encode error", http.StatusInternalServerError)
-		Log.Error("handshake encode:", err)
-		return
-	}
-	Log.Infof("Handshake completed")
-}
-
-func (driver *driver) status(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, fmt.Sprintln("weave plugin", driver.version))
-}
 
 var caps = &api.GetCapabilityResponse{
 	Scope: "global",
 }
 
-func (driver *driver) getCapabilities(w http.ResponseWriter, r *http.Request) {
-	objectResponse(w, caps)
+func (driver *driver) GetCapabilities() (*api.GetCapabilityResponse, error) {
 	Log.Debugf("Get capabilities: responded with %+v", caps)
+	return caps, nil
 }
 
-func (driver *driver) createNetwork(w http.ResponseWriter, r *http.Request) {
-	var create api.CreateNetworkRequest
-	err := json.NewDecoder(r.Body).Decode(&create)
-	if err != nil {
-		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	Log.Debugf("Create network request %+v", &create)
-
+func (driver *driver) CreateNetwork(create *api.CreateNetworkRequest) error {
+	Log.Debugf("Create network request %+v", create)
 	if driver.network != "" {
-		errorResponsef(w, "You get just one network, and you already made %s", driver.network)
-		return
+		return fmt.Errorf("you get just one network, and you already made %s", driver.network)
 	}
-
 	driver.network = create.NetworkID
 	driver.watcher.WatchNetwork(driver.network)
-	emptyResponse(w)
 	Log.Infof("Create network %s", driver.network)
+	return nil
 }
 
-func (driver *driver) deleteNetwork(w http.ResponseWriter, r *http.Request) {
-	var delete api.DeleteNetworkRequest
-	if err := json.NewDecoder(r.Body).Decode(&delete); err != nil {
-		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	Log.Debugf("Delete network request: %+v", &delete)
+func (driver *driver) DeleteNetwork(delete *api.DeleteNetworkRequest) error {
+	Log.Debugf("Delete network request: %+v", delete)
 	if delete.NetworkID != driver.network {
-		errorResponsef(w, "Network %s not found", delete.NetworkID)
-		return
+		return fmt.Errorf("network %s not found", delete.NetworkID)
 	}
 	driver.network = ""
 	driver.watcher.UnwatchNetwork(delete.NetworkID)
-	emptyResponse(w)
 	Log.Infof("Destroy network %s", delete.NetworkID)
+	return nil
 }
 
-func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
-	var create api.CreateEndpointRequest
-	if err := json.NewDecoder(r.Body).Decode(&create); err != nil {
-		sendError(w, "Unable to decode JSON payload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
+func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.CreateEndpointResponse, error) {
 	Log.Debugf("Create endpoint request %+v", &create)
 	netID := create.NetworkID
 	endID := create.EndpointID
 
 	if netID != driver.network {
-		errorResponsef(w, "No such network %s", netID)
-		return
+		return nil, fmt.Errorf("no such network %s", netID)
 	}
 
 	ip, err := driver.allocateIP(endID)
 	if err != nil {
 		Log.Warningf("Error allocating IP: %s", err)
-		sendError(w, "Unable to allocate IP", http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("unable to allocate IP: %s", err)
 	}
 	Log.Debugf("Got IP from IPAM %s", ip.String())
 
@@ -215,68 +108,49 @@ func (driver *driver) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		Interface: respIface,
 	}
 
-	objectResponse(w, resp)
 	Log.Infof("Create endpoint %s %+v", endID, resp)
+	return resp, nil
 }
 
-func (driver *driver) deleteEndpoint(w http.ResponseWriter, r *http.Request) {
-	var delete api.DeleteEndpointRequest
-	if err := json.NewDecoder(r.Body).Decode(&delete); err != nil {
-		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
-		return
-	}
+func (driver *driver) DeleteEndpoint(delete *api.DeleteEndpointRequest) error {
 	Log.Debugf("Delete endpoint request: %+v", &delete)
-	emptyResponse(w)
 	if err := driver.releaseIP(delete.EndpointID); err != nil {
-		Log.Warningf("error releasing IP: %s", err)
+		return fmt.Errorf("error releasing IP: %s", err)
 	}
 	Log.Infof("Delete endpoint %s", delete.EndpointID)
+	return nil
 }
 
-func (driver *driver) infoEndpoint(w http.ResponseWriter, r *http.Request) {
-	var info api.EndpointInfoRequest
-	if err := json.NewDecoder(r.Body).Decode(&info); err != nil {
-		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
-		return
-	}
-	Log.Debugf("Endpoint info request: %+v", &info)
-	objectResponse(w, &api.EndpointInfoResponse{Value: map[string]interface{}{}})
-	Log.Infof("Endpoint info %s", info.EndpointID)
+func (driver *driver) EndpointInfo(req *api.EndpointInfoRequest) (*api.EndpointInfoResponse, error) {
+	Log.Debugf("Endpoint info request: %+v", req)
+	Log.Infof("Endpoint info %s", req.EndpointID)
+	return &api.EndpointInfoResponse{Value: map[string]interface{}{}}, nil
 }
 
-func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
-	var j api.JoinRequest
-	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
-		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
-		return
-	}
-	Log.Debugf("Join request: %+v", &j)
-
+func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinResponse, error error) {
 	endID := j.EndpointID
 
 	// create and attach local name to the bridge
 	local := vethPair(endID[:5])
 	if err := netlink.LinkAdd(local); err != nil {
-		Log.Error(err)
-		errorResponsef(w, "could not create veth pair")
+		error = fmt.Errorf("could not create veth pair: %s", err)
 		return
 	}
 
 	var bridge *netlink.Bridge
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		Log.Error(err)
-		errorResponsef(w, `bridge "%s" not present`, WeaveBridge)
+		err = fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
 		return
 	} else {
 		var ok bool
 		if bridge, ok = maybeBridge.(*netlink.Bridge); !ok {
 			Log.Errorf("%s is %+v", WeaveBridge, maybeBridge)
-			errorResponsef(w, `device "%s" not a bridge`, WeaveBridge)
+			err = fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
 			return
 		}
 	}
 	if netlink.LinkSetMaster(local, bridge) != nil || netlink.LinkSetUp(local) != nil {
-		errorResponsef(w, `unable to bring veth up`)
+		error = fmt.Errorf(`unable to bring veth up`)
 		return
 	}
 
@@ -285,7 +159,7 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 		DstPrefix: "ethwe",
 	}
 
-	res := &api.JoinResponse{
+	response = &api.JoinResponse{
 		InterfaceName: ifname,
 	}
 	if driver.nameserver != "" {
@@ -294,27 +168,21 @@ func (driver *driver) joinEndpoint(w http.ResponseWriter, r *http.Request) {
 			RouteType:   types.CONNECTED,
 			NextHop:     "",
 		}
-		res.StaticRoutes = []api.StaticRoute{routeToDNS}
+		response.StaticRoutes = []api.StaticRoute{routeToDNS}
 	}
-
-	objectResponse(w, res)
 	Log.Infof("Join endpoint %s:%s to %s", j.NetworkID, j.EndpointID, j.SandboxKey)
+	return
 }
 
-func (driver *driver) leaveEndpoint(w http.ResponseWriter, r *http.Request) {
-	var l api.LeaveRequest
-	if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
-		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
-		return
-	}
-	Log.Debugf("Leave request: %+v", &l)
+func (driver *driver) LeaveEndpoint(leave *api.LeaveRequest) error {
+	Log.Debugf("Leave request: %+v", &leave)
 
-	local := vethPair(l.EndpointID[:5])
+	local := vethPair(leave.EndpointID[:5])
 	if err := netlink.LinkDel(local); err != nil {
 		Log.Warningf("unable to delete veth on leave: %s", err)
 	}
-	emptyResponse(w)
-	Log.Infof("Leave %s:%s", l.NetworkID, l.EndpointID)
+	Log.Infof("Leave %s:%s", leave.NetworkID, leave.EndpointID)
+	return nil
 }
 
 // ===
