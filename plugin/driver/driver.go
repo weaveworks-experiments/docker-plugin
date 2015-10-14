@@ -185,6 +185,16 @@ func (driver *driver) LeaveEndpoint(leave *api.LeaveRequest) error {
 	return nil
 }
 
+func (driver *driver) DiscoverNew(disco *api.DiscoveryNotification) error {
+	Log.Debugf("Dicovery new notification: %+v", &disco)
+	return nil
+}
+
+func (driver *driver) DiscoverDelete(disco *api.DiscoveryNotification) error {
+	Log.Debugf("Dicovery delete notification: %+v", &disco)
+	return nil
+}
+
 // ===
 
 func vethPair(suffix string) *netlink.Veth {

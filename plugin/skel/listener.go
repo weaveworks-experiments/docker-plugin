@@ -24,6 +24,8 @@ type Driver interface {
 	EndpointInfo(req *api.EndpointInfoRequest) (*api.EndpointInfoResponse, error)
 	JoinEndpoint(j *api.JoinRequest) (response *api.JoinResponse, error error)
 	LeaveEndpoint(leave *api.LeaveRequest) error
+	DiscoverNew(discover *api.DiscoveryNotification) error
+	DiscoverDelete(delete *api.DiscoveryNotification) error
 }
 
 type listener struct {
@@ -140,6 +142,24 @@ func (listener *listener) leaveEndpoint(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	emptyOrErrorResponse(w, listener.d.LeaveEndpoint(&l))
+}
+
+func (listener *listener) discoverNew(w http.ResponseWriter, r *http.Request) {
+	var disco api.DiscoveryNotification
+	if err := json.NewDecoder(r.Body).Decode(&disco); err != nil {
+		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
+		return
+	}
+	emptyOrErrorResponse(w, listener.d.DiscoverNew(&disco))
+}
+
+func (listener *listener) discoverDelete(w http.ResponseWriter, r *http.Request) {
+	var disco api.DiscoveryNotification
+	if err := json.NewDecoder(r.Body).Decode(&disco); err != nil {
+		sendError(w, "Could not decode JSON encode payload", http.StatusBadRequest)
+		return
+	}
+	emptyOrErrorResponse(w, listener.d.DiscoverDelete(&disco))
 }
 
 // ===
