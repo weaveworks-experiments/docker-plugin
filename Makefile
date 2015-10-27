@@ -25,3 +25,9 @@ $(PLUGIN_EXE): plugin/main.go plugin/driver/*.go plugin/skel/*.go
 $(PLUGIN_EXPORT): plugin/Dockerfile $(PLUGIN_EXE)
 	$(SUDO) docker build -t $(PLUGIN_IMAGE) plugin
 	$(SUDO) docker save $(PLUGIN_IMAGE):latest > $@
+
+build:
+	$(SUDO) go clean -i net
+	$(SUDO) go install -tags netgo std
+	$(MAKE)
+
