@@ -5,7 +5,7 @@ set -e
 weaveexec() {
     docker run --rm --privileged \
     -e VERSION \
-    -e WEAVE_NO_FASTDP \
+    -e WEAVE_NO_FASTDP=true \
     -e WEAVE_DEBUG \
     -e WEAVE_DOCKER_ARGS \
     -e WEAVE_DNS_DOCKER_ARGS \
