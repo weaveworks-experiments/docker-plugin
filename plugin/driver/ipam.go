@@ -36,11 +36,7 @@ func (d *dockerer) ipamOp(ID string, op string) (*net.IPNet, error) {
 	if err != nil {
 		return nil, err
 	}
-	ip, ipnet, err := net.ParseCIDR(string(body))
-	if err == nil {
-		ipnet.IP = ip
-	}
-	return ipnet, err
+	return parseIP(string(body))
 }
 
 // returns an IP for the ID given, allocating a fresh one if necessary
@@ -73,6 +69,15 @@ func (d *dockerer) releaseIP(ID string) error {
 		return fmt.Errorf("unexpected HTTP status code from IP release: %d", res.StatusCode)
 	}
 	return nil
+}
+
+func parseIP(body string) (*net.IPNet, error) {
+	ip, ipnet, err := net.ParseCIDR(string(body))
+	if err != nil {
+		return nil, err
+	}
+	ipnet.IP = ip
+	return ipnet, nil
 }
 
 // If something looking like a container ID is supplied to IPAM, it

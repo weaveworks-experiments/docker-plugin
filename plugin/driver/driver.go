@@ -91,18 +91,20 @@ func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.Cr
 		return nil, fmt.Errorf("no such network %s", netID)
 	}
 
-	ip, err := driver.allocateIP(endID)
-	if err != nil {
-		Log.Warningf("Error allocating IP: %s", err)
-		return nil, fmt.Errorf("unable to allocate IP: %s", err)
-	}
-	Log.Debugf("Got IP from IPAM %s", ip.String())
+	var respIface *api.EndpointInterface
 
-	mac := makeMac(ip.IP)
-
-	respIface := &api.EndpointInterface{
-		Address:    ip.String(),
-		MacAddress: mac,
+	if create.Interface == nil {
+		ip, err := driver.allocateIP(endID)
+		if err != nil {
+			Log.Warningf("Error allocating IP: %s", err)
+			return nil, fmt.Errorf("unable to allocate IP: %s", err)
+		}
+		Log.Debugf("Got IP from IPAM %s", ip.String())
+		mac := makeMac(ip.IP)
+		respIface = &api.EndpointInterface{
+			Address:    ip.String(),
+			MacAddress: mac,
+		}
 	}
 	resp := &api.CreateEndpointResponse{
 		Interface: respIface,
