@@ -5,6 +5,7 @@ set -e
 weaveexec() {
     docker run --rm --privileged \
     -e VERSION \
+    -e WEAVE_NO_FASTDP \
     -e WEAVE_DEBUG \
     -e WEAVE_DOCKER_ARGS \
     -e WEAVE_DNS_DOCKER_ARGS \
@@ -17,20 +18,8 @@ weaveexec() {
 }
 
 echo Run weave
-weaveexec launch -iprange 10.20.0.0/16 $WEAVE_ARGS
-
-echo Run weaveDNS
-weaveexec launch-dns 10.254.254.1/24 --watch=false $WEAVE_DNS_ARGS
-
-echo Make weaved containers routable from weaveDNS
-WEAVEDNS_PID=$(docker inspect --format='{{ .State.Pid }}' weavedns)
-[ ! -d /var/run/netns ] && sudo mkdir -p /var/run/netns
-sudo ln -s /proc/$WEAVEDNS_PID/ns/net /var/run/netns/$WEAVEDNS_PID
-sudo ip netns exec $WEAVEDNS_PID sudo ip route add 10.20.0.0/16 dev ethwe
-sudo rm -f /var/run/netns/$WEAVEDNS_PID
+weaveexec launch-router --ipalloc-range 10.20.0.0/16 $WEAVE_ARGS
 
 echo Run weave plugin
-sudo rm -f /usr/share/docker/plugins/weave.sock
-docker rm -f weaveplugin || true
-
-`dirname $0`/start-plugin.sh --nameserver=10.254.254.1 "$@"
+docker rm -f weaveplugin 2>&1 || true
+`dirname $0`/start-plugin.sh "$@"
