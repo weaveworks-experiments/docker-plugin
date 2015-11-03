@@ -65,8 +65,7 @@ As a consequence, you need to supply Docker with the address of a "cluster
 store" when you start it; for example, an etcd installation.
 
 There's no specific documentation of using a cluster store, but the
-first part of this guide may help:
-[https://github.com/docker/docker/blob/master/docs/userguide/networking/get-started-overlay.md][].
+first part of [this guide](https://github.com/docker/docker/blob/master/docs/userguide/networking/get-started-overlay.md) may help.
 
 ### Only one network at a time
 
