@@ -8,7 +8,7 @@ network.
 ## Running
 
 The driver executable can be run in a container, or just on the
-host. It assumes you have Weave and WeaveDNS running already.
+host. It assumes you have Weave running already.
 
 The command-line arguments are:
 
