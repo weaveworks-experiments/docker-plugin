@@ -2,7 +2,7 @@
 
 This program is a
 [remote driver](https://github.com/docker/libnetwork/blob/master/docs/remote.md)
-plugin for LibNetwork which creates networks and endpoints on a Weave
+plugin for libnetwork which creates networks and endpoints on a Weave
 network.
 
 ## Running
@@ -22,7 +22,7 @@ The command-line arguments are:
 
  * `--socket=<path>`, which is the socket on which to listen for the
    [plugin protocol](https://github.com/docker/docker/blob/master/experimental/plugin_api.md). This defaults to what Docker expects, that is
-   `"/usr/share/docker/plugins/weave.sock"`, but you may wish to
+   `"/run/docker/plugins/weave.sock"`, but you may wish to
    change it, for instance if you're running more than one instance of
    the driver for some reason.
 
@@ -41,12 +41,12 @@ interfaces on the host.
 
 It will also need to share with Docker the socket on which it listens,
 which essentially needs you need to mount the directory
-`/usr/share/docker/plugins/`; and, it will need the Docker API socket
+`/run/docker/plugins/`; and, it will need the Docker API socket
 bind-mounted.
 
 An example of a Docker command-line for running the driver is given in
 `start-plugin.sh`. The script `start-all.sh` gives an example of
-running Weave, WeaveDNS, and the driver plugin.
+running Weave and the driver plugin.
 
 ## Caveats and workarounds
 
@@ -54,12 +54,28 @@ There are some tricks to bear in mind when using the driver plugin for
 the minute. Ideally these will disappear as the driver interface is
 refined, Weave is enhanced, and so on.
 
+### Docker needs a "cluster store"
+
+Weave operates as a "globally scoped" libnetwork driver, which means
+libnetwork will assume all networks and endpoints are commonly known
+to all hosts. It does this by using a shared database which you must
+provide.
+
+As a consequence, you need to supply Docker with the address of a "cluster
+store" when you start it; for example, an etcd installation.
+
+There's no specific documentation of using a cluster store, but the
+first part of this guide may help:
+[https://github.com/docker/docker/blob/master/docs/userguide/networking/get-started-overlay.md][].
+
 ### Only one network at a time
 
-It would be fairly natural for this plugin to implement networks by
-giving each a subnet. However, Weave's IP address management does not
-allocate subnets (although it can allocate an IP address on a _given_
-subnet). As a result, for the moment you can have only one network at
+In general, libnetwork requires drivers to isolate networks from each
+other. However, in Weave all addresses are on the same network;
+although they can be on different subnets, the plugin cannot guarantee
+that libnetwork's IPAM will arrange that in the appropriate way.
+
+As a result, for the moment you can have only one network at
 a time.
 
 ### Recovery after restarts
@@ -88,9 +104,9 @@ This can be arranged by supplying the _Weave_ IP given to WeaveDNS to
 the plugin with the `--nameserver` argument. Doing so will make the
 driver plugin configure a static route to the WeaveDNS IP on each
 interface it gives to a container. The WeaveDNS container will _also_
-need a route back to the containers (most conveniently, to the subnet
-you told Weave to allocate IPs on); an example showing how to add this
-route is given in the script `start-all.sh`.
+need a route back to the containers; but since we are not in control
+of IP address allocation, it's up to you to arrange that, until we can
+think of a workaround.
 
 ### WeaveDNS registration
 
@@ -101,8 +117,8 @@ IP address added to WeaveDNS.
 Containers will only be registered with WeaveDNS if the plugin is
 running when they are started (and removes names when containers
 stop), since the driver plugin listens to the Docker event stream to
-see containers come and go. Endpoints ("services") added after the
-fact won't trigger a DNS registration.
+see containers come and go. Endpoints added after the fact won't
+trigger a DNS registration.
 
 ## Building
 
@@ -112,3 +128,6 @@ OK, not always that simple: you will need the same setup as the
 [weave repository](https://github.com/weaveworks/weave) needs; easiest
 is to use the `Vagrantfile` in there and add another shared folder for
 this directory.
+
+Alternatively, you can refer to the image on DockerHub, though be
+aware it may not always be up to date: `weaveworks/plugin`.
