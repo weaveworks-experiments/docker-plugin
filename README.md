@@ -48,6 +48,15 @@ An example of a Docker command-line for running the driver is given in
 `start-plugin.sh`. The script `start-all.sh` gives an example of
 running Weave and the driver plugin.
 
+Once you have the plugin running and docker set up with a "cluster
+store" (see below), you can create a network like this:
+
+    docker network create --driver=weave weave1
+
+and use it to connect containers like this:
+
+    docker run --net=weave1 -ti alpine /bin/sh
+
 ## Caveats and workarounds
 
 There are some tricks to bear in mind when using the driver plugin for
