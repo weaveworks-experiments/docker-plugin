@@ -21,5 +21,5 @@ echo Run weave
 weaveexec launch-router --ipalloc-range 10.20.0.0/16 $WEAVE_ARGS
 
 echo Run weave plugin
-docker rm -f weaveplugin 2>&1 || true
+docker rm -f weaveplugin > /dev/null 2>&1 || true
 `dirname $0`/start-plugin.sh "$@"
