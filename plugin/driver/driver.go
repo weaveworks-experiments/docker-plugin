@@ -84,12 +84,7 @@ func (driver *driver) DeleteNetwork(delete *api.DeleteNetworkRequest) error {
 
 func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.CreateEndpointResponse, error) {
 	Log.Debugf("Create endpoint request %+v", &create)
-	netID := create.NetworkID
 	endID := create.EndpointID
-
-	if netID != driver.network {
-		return nil, fmt.Errorf("no such network %s", netID)
-	}
 
 	var respIface *api.EndpointInterface
 
