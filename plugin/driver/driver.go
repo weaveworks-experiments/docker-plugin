@@ -23,7 +23,6 @@ const (
 type driver struct {
 	dockerer
 	version    string
-	network    string
 	nameserver string
 	watcher    Watcher
 }
@@ -62,21 +61,13 @@ func (driver *driver) GetCapabilities() (*api.GetCapabilityResponse, error) {
 
 func (driver *driver) CreateNetwork(create *api.CreateNetworkRequest) error {
 	Log.Debugf("Create network request %+v", create)
-	if driver.network != "" {
-		return fmt.Errorf("you get just one network, and you already made %s", driver.network)
-	}
-	driver.network = create.NetworkID
-	driver.watcher.WatchNetwork(driver.network)
-	Log.Infof("Create network %s", driver.network)
+	driver.watcher.WatchNetwork(create.NetworkID)
+	Log.Infof("Create network %s", create.NetworkID)
 	return nil
 }
 
 func (driver *driver) DeleteNetwork(delete *api.DeleteNetworkRequest) error {
 	Log.Debugf("Delete network request: %+v", delete)
-	if delete.NetworkID != driver.network {
-		return fmt.Errorf("network %s not found", delete.NetworkID)
-	}
-	driver.network = ""
 	driver.watcher.UnwatchNetwork(delete.NetworkID)
 	Log.Infof("Destroy network %s", delete.NetworkID)
 	return nil
@@ -84,12 +75,7 @@ func (driver *driver) DeleteNetwork(delete *api.DeleteNetworkRequest) error {
 
 func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.CreateEndpointResponse, error) {
 	Log.Debugf("Create endpoint request %+v", &create)
-	netID := create.NetworkID
 	endID := create.EndpointID
-
-	if netID != driver.network {
-		return nil, fmt.Errorf("no such network %s", netID)
-	}
 
 	var respIface *api.EndpointInterface
 
