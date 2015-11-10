@@ -8,6 +8,7 @@ import (
 	"github.com/docker/libnetwork/types"
 
 	. "github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/common/odp"
 
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/vishvananda/netlink"
@@ -125,20 +126,31 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinRespon
 		return
 	}
 
-	var bridge *netlink.Bridge
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		err = fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
+		error = fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
 		return
 	} else {
-		var ok bool
-		if bridge, ok = maybeBridge.(*netlink.Bridge); !ok {
-			Log.Errorf("%s is %+v", WeaveBridge, maybeBridge)
-			err = fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
+		switch maybeBridge.(type) {
+		case *netlink.Bridge:
+			if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
+				error = fmt.Errorf(`unable to set master: %s`, err)
+				return
+			}
+		case *netlink.Generic:
+			if maybeBridge.Type() != "openvswitch" {
+				Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
+				error = fmt.Errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
+				return
+			}
+			odp.AddDatapathInterface(WeaveBridge, local.Name)
+		default:
+			Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
+			error = fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
 			return
 		}
 	}
-	if netlink.LinkSetMaster(local, bridge) != nil || netlink.LinkSetUp(local) != nil {
-		error = fmt.Errorf(`unable to bring veth up`)
+	if err := netlink.LinkSetUp(local); err != nil {
+		error = fmt.Errorf(`unable to bring veth up: %s`, err)
 		return
 	}
 
