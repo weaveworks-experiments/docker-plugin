@@ -8,6 +8,7 @@ import (
 	"github.com/docker/libnetwork/types"
 
 	. "github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/common/odp"
 
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/vishvananda/netlink"
@@ -25,9 +26,10 @@ type driver struct {
 	version    string
 	nameserver string
 	watcher    Watcher
+	scope      string
 }
 
-func New(version string, nameserver string) (skel.Driver, error) {
+func New(version, nameserver, scope string) (skel.Driver, error) {
 	client, err := docker.NewClient("unix:///var/run/docker.sock")
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to docker: %s", err)
@@ -45,16 +47,16 @@ func New(version string, nameserver string) (skel.Driver, error) {
 		nameserver: nameserver,
 		version:    version,
 		watcher:    watcher,
+		scope:      scope,
 	}, nil
 }
 
 // === protocol handlers
 
-var caps = &api.GetCapabilityResponse{
-	Scope: "global",
-}
-
 func (driver *driver) GetCapabilities() (*api.GetCapabilityResponse, error) {
+	var caps = &api.GetCapabilityResponse{
+		Scope: driver.scope,
+	}
 	Log.Debugf("Get capabilities: responded with %+v", caps)
 	return caps, nil
 }
@@ -115,31 +117,36 @@ func (driver *driver) EndpointInfo(req *api.EndpointInfoRequest) (*api.EndpointI
 	return &api.EndpointInfoResponse{Value: map[string]interface{}{}}, nil
 }
 
-func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinResponse, error error) {
+func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error) {
 	endID := j.EndpointID
 
 	// create and attach local name to the bridge
 	local := vethPair(endID[:5])
 	if err := netlink.LinkAdd(local); err != nil {
-		error = fmt.Errorf("could not create veth pair: %s", err)
-		return
+		return nil, fmt.Errorf("could not create veth pair: %s", err)
 	}
 
-	var bridge *netlink.Bridge
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		err = fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
-		return
+		return nil, fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
 	} else {
-		var ok bool
-		if bridge, ok = maybeBridge.(*netlink.Bridge); !ok {
-			Log.Errorf("%s is %+v", WeaveBridge, maybeBridge)
-			err = fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
-			return
+		switch maybeBridge.(type) {
+		case *netlink.Bridge:
+			if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
+				return nil, fmt.Errorf(`unable to set master: %s`, err)
+			}
+		case *netlink.Generic:
+			if maybeBridge.Type() != "openvswitch" {
+				Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
+				return nil, fmt.Errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
+			}
+			odp.AddDatapathInterface(WeaveBridge, local.Name)
+		default:
+			Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
+			return nil, fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
 		}
 	}
-	if netlink.LinkSetMaster(local, bridge) != nil || netlink.LinkSetUp(local) != nil {
-		error = fmt.Errorf(`unable to bring veth up`)
-		return
+	if err := netlink.LinkSetUp(local); err != nil {
+		return nil, fmt.Errorf(`unable to bring veth up: %s`, err)
 	}
 
 	ifname := &api.InterfaceName{
@@ -147,7 +154,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinRespon
 		DstPrefix: "ethwe",
 	}
 
-	response = &api.JoinResponse{
+	response := &api.JoinResponse{
 		InterfaceName: ifname,
 	}
 	if driver.nameserver != "" {
@@ -159,7 +166,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinRespon
 		response.StaticRoutes = []api.StaticRoute{routeToDNS}
 	}
 	Log.Infof("Join endpoint %s:%s to %s", j.NetworkID, j.EndpointID, j.SandboxKey)
-	return
+	return response, nil
 }
 
 func (driver *driver) LeaveEndpoint(leave *api.LeaveRequest) error {
