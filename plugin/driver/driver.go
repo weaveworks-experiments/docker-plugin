@@ -116,42 +116,36 @@ func (driver *driver) EndpointInfo(req *api.EndpointInfoRequest) (*api.EndpointI
 	return &api.EndpointInfoResponse{Value: map[string]interface{}{}}, nil
 }
 
-func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinResponse, error error) {
+func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error) {
 	endID := j.EndpointID
 
 	// create and attach local name to the bridge
 	local := vethPair(endID[:5])
 	if err := netlink.LinkAdd(local); err != nil {
-		error = fmt.Errorf("could not create veth pair: %s", err)
-		return
+		return nil, fmt.Errorf("could not create veth pair: %s", err)
 	}
 
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		error = fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
-		return
+		return nil, fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
 	} else {
 		switch maybeBridge.(type) {
 		case *netlink.Bridge:
 			if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
-				error = fmt.Errorf(`unable to set master: %s`, err)
-				return
+				return nil, fmt.Errorf(`unable to set master: %s`, err)
 			}
 		case *netlink.Generic:
 			if maybeBridge.Type() != "openvswitch" {
 				Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
-				error = fmt.Errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
-				return
+				return nil, fmt.Errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
 			}
 			odp.AddDatapathInterface(WeaveBridge, local.Name)
 		default:
 			Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
-			error = fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
-			return
+			return nil, fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
 		}
 	}
 	if err := netlink.LinkSetUp(local); err != nil {
-		error = fmt.Errorf(`unable to bring veth up: %s`, err)
-		return
+		return nil, fmt.Errorf(`unable to bring veth up: %s`, err)
 	}
 
 	ifname := &api.InterfaceName{
@@ -159,7 +153,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinRespon
 		DstPrefix: "ethwe",
 	}
 
-	response = &api.JoinResponse{
+	response := &api.JoinResponse{
 		InterfaceName: ifname,
 	}
 	if driver.nameserver != "" {
@@ -171,7 +165,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (response *api.JoinRespon
 		response.StaticRoutes = []api.StaticRoute{routeToDNS}
 	}
 	Log.Infof("Join endpoint %s:%s to %s", j.NetworkID, j.EndpointID, j.SandboxKey)
-	return
+	return response, nil
 }
 
 func (driver *driver) LeaveEndpoint(leave *api.LeaveRequest) error {
