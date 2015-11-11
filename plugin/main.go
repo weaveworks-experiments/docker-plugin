@@ -47,6 +47,10 @@ func main() {
 
 	var listener net.Listener
 
+	// remove socket from last invocation
+	if err := os.Remove(address); err != nil && !os.IsNotExist(err) {
+		Log.Fatal(err)
+	}
 	listener, err = net.Listen("unix", address)
 	if err != nil {
 		Log.Fatal(err)
