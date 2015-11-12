@@ -126,7 +126,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error
 	}
 
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		return nil, fmt.Errorf(`bridge "%s" not present`, WeaveBridge)
+		return nil, fmt.Errorf(`bridge "%s" not present; did you launch weave?`, WeaveBridge)
 	} else {
 		switch maybeBridge.(type) {
 		case *netlink.Bridge:
