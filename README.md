@@ -26,8 +26,8 @@ The command-line arguments are:
    change it, for instance if you're running more than one instance of
    the driver for some reason.
 
- * `--debug=<true|false>`, which tells the plugin to emit information
-   useful for debugging.
+ * `--log-level=<debug|info|warning|error>`, which tells the plugin
+   how much information to emit for debugging.
 
 The driver will need elevated privileges (e.g., to be run with
 `sudo`), for creating network interfaces, and access to the Docker API
