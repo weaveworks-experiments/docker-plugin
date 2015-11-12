@@ -133,7 +133,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error
 			if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
 				return nil, fmt.Errorf(`unable to set master: %s`, err)
 			}
-		case *netlink.Generic:
+		case *netlink.GenericLink:
 			if maybeBridge.Type() != "openvswitch" {
 				Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
 				return nil, fmt.Errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
