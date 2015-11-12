@@ -1,8 +1,7 @@
 # Weave network driver extension for Docker
 
-This program is a
-[remote driver](https://github.com/docker/libnetwork/blob/master/docs/remote.md)
-plugin for libnetwork which creates endpoints on a Weave network.
+A [plugin](http://docs.docker.com/engine/extend/plugin_api/) to
+integrate [weave Net](http://weave.works/net/) with Docker.
 
 ## Setup:
 
@@ -23,7 +22,7 @@ plugin for libnetwork which creates endpoints on a Weave network.
    change it, for instance if you're running more than one instance of
    the driver for some reason.
 
- * `--log-level=<debug|info|warning|error>`, which tells the plugin
+ * `--log-level=debug|info|warning|error`, which tells the plugin
    how much information to emit for debugging.
 
 ## Points to note
@@ -40,14 +39,15 @@ provide.
 As a consequence, you need to supply Docker with the address of a "cluster
 store" when you start it; for example, an etcd installation.
 
-There's no specific documentation of using a cluster store, but the
+There's no specific documentation for using a cluster store, but the
 first part of [this guide](https://github.com/docker/docker/blob/master/docs/userguide/networking/get-started-overlay.md) may help.
 
 ### WeaveDNS not supported
 
 Weave's built-in service discovery mechanism is not currently
-supported by the plugin.  However, Docker achieves a similar effect by
-writing all container names and hostnames into every container's `/etc/hosts`
+supported by the plugin.  However, Docker provides a rudimentary
+discovery mechanism by writing all user-provided container names and
+hostnames into every container's `/etc/hosts`.
 
 ### Restarting
 
