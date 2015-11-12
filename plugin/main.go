@@ -37,6 +37,8 @@ func main() {
 
 	SetLogLevel(logLevel)
 
+	Log.Println("Weave plugin", version, "Command line options:", os.Args)
+
 	var d skel.Driver
 	d, err := driver.New(version, nameserver)
 	if err != nil {

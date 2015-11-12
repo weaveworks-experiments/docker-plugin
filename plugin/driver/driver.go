@@ -31,7 +31,7 @@ type driver struct {
 func New(version string, nameserver string) (skel.Driver, error) {
 	client, err := docker.NewClient("unix:///var/run/docker.sock")
 	if err != nil {
-		return nil, fmt.Errorf("could not connect to docker: %s", err)
+		return nil, errorf("could not connect to docker: %s", err)
 	}
 
 	watcher, err := NewWatcher(client)
@@ -47,6 +47,11 @@ func New(version string, nameserver string) (skel.Driver, error) {
 		version:    version,
 		watcher:    watcher,
 	}, nil
+}
+
+func errorf(format string, a ...interface{}) error {
+	Log.Errorf(format, a...)
+	return fmt.Errorf(format, a...)
 }
 
 // === protocol handlers
@@ -83,8 +88,7 @@ func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.Cr
 	if create.Interface == nil {
 		ip, err := driver.allocateIP(endID)
 		if err != nil {
-			Log.Warningf("Error allocating IP: %s", err)
-			return nil, fmt.Errorf("unable to allocate IP: %s", err)
+			return nil, errorf("unable to allocate IP: %s", err)
 		}
 		Log.Debugf("Got IP from IPAM %s", ip.String())
 		mac := makeMac(ip.IP)
@@ -104,7 +108,7 @@ func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.Cr
 func (driver *driver) DeleteEndpoint(delete *api.DeleteEndpointRequest) error {
 	Log.Debugf("Delete endpoint request: %+v", &delete)
 	if err := driver.releaseIP(delete.EndpointID); err != nil {
-		return fmt.Errorf("error releasing IP: %s", err)
+		return errorf("error releasing IP: %s", err)
 	}
 	Log.Infof("Delete endpoint %s", delete.EndpointID)
 	return nil
@@ -122,30 +126,30 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error
 	// create and attach local name to the bridge
 	local := vethPair(endID[:5])
 	if err := netlink.LinkAdd(local); err != nil {
-		return nil, fmt.Errorf("could not create veth pair: %s", err)
+		return nil, errorf("could not create veth pair: %s", err)
 	}
 
 	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		return nil, fmt.Errorf(`bridge "%s" not present; did you launch weave?`, WeaveBridge)
+		return nil, errorf(`bridge "%s" not present; did you launch weave?`, WeaveBridge)
 	} else {
 		switch maybeBridge.(type) {
 		case *netlink.Bridge:
 			if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
-				return nil, fmt.Errorf(`unable to set master: %s`, err)
+				return nil, errorf(`unable to set master: %s`, err)
 			}
 		case *netlink.GenericLink:
 			if maybeBridge.Type() != "openvswitch" {
 				Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
-				return nil, fmt.Errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
+				return nil, errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
 			}
 			odp.AddDatapathInterface(WeaveBridge, local.Name)
 		default:
 			Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
-			return nil, fmt.Errorf(`device "%s" not a bridge`, WeaveBridge)
+			return nil, errorf(`device "%s" not a bridge`, WeaveBridge)
 		}
 	}
 	if err := netlink.LinkSetUp(local); err != nil {
-		return nil, fmt.Errorf(`unable to bring veth up: %s`, err)
+		return nil, errorf(`unable to bring veth up: %s`, err)
 	}
 
 	ifname := &api.InterfaceName{
