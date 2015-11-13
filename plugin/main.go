@@ -47,6 +47,11 @@ func main() {
 		Log.Fatalf("unable to create driver: %s", err)
 	}
 
+	i, err := driver.NewIpam(version)
+	if err != nil {
+		Log.Fatalf("unable to create driver: %s", err)
+	}
+
 	var listener net.Listener
 
 	// remove socket from last invocation
@@ -64,7 +69,7 @@ func main() {
 
 	endChan := make(chan error, 1)
 	go func() {
-		endChan <- skel.Listen(listener, d)
+		endChan <- skel.Listen(listener, d, i)
 	}()
 
 	select {
