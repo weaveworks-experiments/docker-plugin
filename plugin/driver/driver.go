@@ -2,7 +2,6 @@ package driver
 
 import (
 	"fmt"
-	"net"
 
 	"github.com/docker/libnetwork/drivers/remote/api"
 	"github.com/docker/libnetwork/types"
@@ -83,23 +82,10 @@ func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.Cr
 	Log.Debugf("Create endpoint request %+v", create)
 	endID := create.EndpointID
 
-	var respIface *api.EndpointInterface
-
 	if create.Interface == nil {
-		ip, err := driver.allocateIP(endID)
-		if err != nil {
-			return nil, errorf("unable to allocate IP: %s", err)
-		}
-		Log.Debugf("Got IP from IPAM %s", ip.String())
-		mac := makeMac(ip.IP)
-		respIface = &api.EndpointInterface{
-			Address:    ip.String(),
-			MacAddress: mac,
-		}
+		return nil, fmt.Errorf("Not supported: creating an interface from within CreateEndpoint")
 	}
-	resp := &api.CreateEndpointResponse{
-		Interface: respIface,
-	}
+	resp := &api.CreateEndpointResponse{}
 
 	Log.Infof("Create endpoint %s %+v", endID, resp)
 	return resp, nil
@@ -107,9 +93,6 @@ func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.Cr
 
 func (driver *driver) DeleteEndpoint(delete *api.DeleteEndpointRequest) error {
 	Log.Debugf("Delete endpoint request: %+v", delete)
-	if err := driver.releaseIP(delete.EndpointID); err != nil {
-		return errorf("error releasing IP: %s", err)
-	}
 	Log.Infof("Delete endpoint %s", delete.EndpointID)
 	return nil
 }
@@ -204,12 +187,4 @@ func vethPair(suffix string) *netlink.Veth {
 		LinkAttrs: netlink.LinkAttrs{Name: "vethwl" + suffix},
 		PeerName:  "vethwg" + suffix,
 	}
-}
-
-func makeMac(ip net.IP) string {
-	hw := make(net.HardwareAddr, 6)
-	hw[0] = 0x7a
-	hw[1] = 0x42
-	copy(hw[2:], ip.To4())
-	return hw.String()
 }
