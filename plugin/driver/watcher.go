@@ -20,8 +20,6 @@ type watcher struct {
 }
 
 type Watcher interface {
-	WatchNetwork(uuid string)
-	UnwatchNetwork(uuid string)
 }
 
 func NewWatcher(client *docker.Client) (Watcher, error) {
@@ -49,16 +47,6 @@ func NewWatcher(client *docker.Client) (Watcher, error) {
 	}()
 
 	return w, nil
-}
-
-func (w *watcher) WatchNetwork(uuid string) {
-	Log.Debugf("Watch network %s", uuid)
-	w.networks[uuid] = true
-}
-
-func (w *watcher) UnwatchNetwork(uuid string) {
-	Log.Debugf("Unwatch network %s", uuid)
-	delete(w.networks, uuid)
 }
 
 func (w *watcher) ContainerStart(id string) {

@@ -21,10 +21,8 @@ const (
 )
 
 type driver struct {
-	dockerer
 	version    string
 	nameserver string
-	watcher    Watcher
 }
 
 func New(version string, nameserver string) (skel.Driver, error) {
@@ -33,18 +31,14 @@ func New(version string, nameserver string) (skel.Driver, error) {
 		return nil, errorf("could not connect to docker: %s", err)
 	}
 
-	watcher, err := NewWatcher(client)
+	_, err = NewWatcher(client)
 	if err != nil {
 		return nil, err
 	}
 
 	return &driver{
-		dockerer: dockerer{
-			client: client,
-		},
 		nameserver: nameserver,
 		version:    version,
-		watcher:    watcher,
 	}, nil
 }
 
@@ -66,14 +60,12 @@ func (driver *driver) GetCapabilities() (*api.GetCapabilityResponse, error) {
 
 func (driver *driver) CreateNetwork(create *api.CreateNetworkRequest) error {
 	Log.Debugf("Create network request %+v", create)
-	driver.watcher.WatchNetwork(create.NetworkID)
 	Log.Infof("Create network %s", create.NetworkID)
 	return nil
 }
 
 func (driver *driver) DeleteNetwork(delete *api.DeleteNetworkRequest) error {
 	Log.Debugf("Delete network request: %+v", delete)
-	driver.watcher.UnwatchNetwork(delete.NetworkID)
 	Log.Infof("Destroy network %s", delete.NetworkID)
 	return nil
 }
