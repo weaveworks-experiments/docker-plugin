@@ -5,6 +5,8 @@ integrate [weave Net](http://weave.works/net/) with Docker.
 
 ## Setup:
 
+Before you can use this plugin, you must [install weave](https://github.com/weaveworks/weave#installation) and [configure docker with a "cluster store"](https://docs.docker.com/engine/userguide/networking/get-started-overlay/#step-1-set-up-a-key-value-store).
+
     $ weave launch
     $ weave launch-plugin
     $ docker network create --driver=weave weave
