@@ -39,8 +39,13 @@ func main() {
 
 	Log.Println("Weave plugin", version, "Command line options:", os.Args)
 
+	dockerSocket := "unix:///var/run/docker.sock"
+	if os.Getenv("DOCKER_HOST") != "" {
+		dockerSocket = os.Getenv("DOCKER_HOST")
+	}
+
 	var d skel.Driver
-	d, err := driver.New(version, nameserver)
+	d, err := driver.New(dockerSocket, version, nameserver)
 	if err != nil {
 		Log.Fatalf("unable to create driver: %s", err)
 	}
