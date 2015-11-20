@@ -80,7 +80,7 @@ func (driver *driver) DeleteNetwork(delete *api.DeleteNetworkRequest) error {
 }
 
 func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.CreateEndpointResponse, error) {
-	Log.Debugf("Create endpoint request %+v", &create)
+	Log.Debugf("Create endpoint request %+v", create)
 	endID := create.EndpointID
 
 	var respIface *api.EndpointInterface
@@ -106,7 +106,7 @@ func (driver *driver) CreateEndpoint(create *api.CreateEndpointRequest) (*api.Cr
 }
 
 func (driver *driver) DeleteEndpoint(delete *api.DeleteEndpointRequest) error {
-	Log.Debugf("Delete endpoint request: %+v", &delete)
+	Log.Debugf("Delete endpoint request: %+v", delete)
 	if err := driver.releaseIP(delete.EndpointID); err != nil {
 		return errorf("error releasing IP: %s", err)
 	}
@@ -177,7 +177,7 @@ func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error
 }
 
 func (driver *driver) LeaveEndpoint(leave *api.LeaveRequest) error {
-	Log.Debugf("Leave request: %+v", &leave)
+	Log.Debugf("Leave request: %+v", leave)
 
 	local := vethPair(leave.EndpointID[:5])
 	if err := netlink.LinkDel(local); err != nil {
@@ -188,12 +188,12 @@ func (driver *driver) LeaveEndpoint(leave *api.LeaveRequest) error {
 }
 
 func (driver *driver) DiscoverNew(disco *api.DiscoveryNotification) error {
-	Log.Debugf("Dicovery new notification: %+v", &disco)
+	Log.Debugf("Dicovery new notification: %+v", disco)
 	return nil
 }
 
 func (driver *driver) DiscoverDelete(disco *api.DiscoveryNotification) error {
-	Log.Debugf("Dicovery delete notification: %+v", &disco)
+	Log.Debugf("Dicovery delete notification: %+v", disco)
 	return nil
 }
 
