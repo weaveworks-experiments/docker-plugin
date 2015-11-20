@@ -25,8 +25,8 @@ type driver struct {
 	nameserver string
 }
 
-func New(version string, nameserver string) (skel.Driver, error) {
-	client, err := docker.NewClient("unix:///var/run/docker.sock")
+func New(socket, version string, nameserver string) (skel.Driver, error) {
+	client, err := docker.NewClient(socket)
 	if err != nil {
 		return nil, errorf("could not connect to docker: %s", err)
 	}
