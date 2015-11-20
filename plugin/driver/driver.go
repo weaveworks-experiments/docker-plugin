@@ -123,34 +123,36 @@ func (driver *driver) EndpointInfo(req *api.EndpointInfoRequest) (*api.EndpointI
 func (driver *driver) JoinEndpoint(j *api.JoinRequest) (*api.JoinResponse, error) {
 	endID := j.EndpointID
 
+	maybeBridge, err := netlink.LinkByName(WeaveBridge)
+	if err != nil {
+		return nil, errorf(`bridge "%s" not present; did you launch weave?`, WeaveBridge)
+	}
+
 	// create and attach local name to the bridge
 	local := vethPair(endID[:5])
+	local.Attrs().MTU = maybeBridge.Attrs().MTU
 	if err := netlink.LinkAdd(local); err != nil {
 		return nil, errorf("could not create veth pair: %s", err)
 	}
 
-	if maybeBridge, err := netlink.LinkByName(WeaveBridge); err != nil {
-		return nil, errorf(`bridge "%s" not present; did you launch weave?`, WeaveBridge)
-	} else {
-		switch maybeBridge.(type) {
-		case *netlink.Bridge:
-			if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
-				return nil, errorf(`unable to set master: %s`, err)
-			}
-		case *netlink.GenericLink:
-			if maybeBridge.Type() != "openvswitch" {
-				Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
-				return nil, errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
-			}
-			odp.AddDatapathInterface(WeaveBridge, local.Name)
-		case *netlink.Device:
-			Log.Warnf("kernel does not report what kind of device %s is, just %+v", WeaveBridge, maybeBridge)
-			// Assume it's our openvswitch device, and the kernel has not been updated to report the kind.
-			odp.AddDatapathInterface(WeaveBridge, local.Name)
-		default:
-			Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
-			return nil, errorf(`device "%s" not a bridge`, WeaveBridge)
+	switch maybeBridge.(type) {
+	case *netlink.Bridge:
+		if err := netlink.LinkSetMasterByIndex(local, maybeBridge.Attrs().Index); err != nil {
+			return nil, errorf(`unable to set master: %s`, err)
 		}
+	case *netlink.GenericLink:
+		if maybeBridge.Type() != "openvswitch" {
+			Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
+			return nil, errorf(`device "%s" is of type "%s"`, WeaveBridge, maybeBridge.Type())
+		}
+		odp.AddDatapathInterface(WeaveBridge, local.Name)
+	case *netlink.Device:
+		Log.Warnf("kernel does not report what kind of device %s is, just %+v", WeaveBridge, maybeBridge)
+		// Assume it's our openvswitch device, and the kernel has not been updated to report the kind.
+		odp.AddDatapathInterface(WeaveBridge, local.Name)
+	default:
+		Log.Errorf("device %s is %+v", WeaveBridge, maybeBridge)
+		return nil, errorf(`device "%s" not a bridge`, WeaveBridge)
 	}
 	if err := netlink.LinkSetUp(local); err != nil {
 		return nil, errorf(`unable to bring veth up: %s`, err)
