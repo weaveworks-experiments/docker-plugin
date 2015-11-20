@@ -10,7 +10,7 @@ import (
 )
 
 func (d *dockerer) ipamOp(ID string, op string) (*net.IPNet, error) {
-	weaveip, err := d.getContainerBridgeIP(WeaveContainer)
+	weaveip, err := "127.0.0.1", error(nil) //d.getContainerBridgeIP(WeaveContainer)
 	Log.Debugf("IPAM operation %s for %s", op, ID)
 	if err != nil {
 		return nil, err
