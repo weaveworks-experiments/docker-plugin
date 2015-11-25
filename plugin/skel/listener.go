@@ -214,7 +214,7 @@ func (listener *listener) requestPool(w http.ResponseWriter, r *http.Request) {
 
 func (listener *listener) releasePool(w http.ResponseWriter, r *http.Request) {
 	var rq iapi.ReleasePoolRequest
-	if err := decode(w, r, &r); err != nil {
+	if err := decode(w, r, &rq); err != nil {
 		return
 	}
 	err := listener.i.ReleasePool(rq.PoolID)
@@ -223,7 +223,7 @@ func (listener *listener) releasePool(w http.ResponseWriter, r *http.Request) {
 
 func (listener *listener) requestAddress(w http.ResponseWriter, r *http.Request) {
 	var rq iapi.RequestAddressRequest
-	if err := decode(w, r, &r); err != nil {
+	if err := decode(w, r, &rq); err != nil {
 		return
 	}
 	address, data, err := listener.i.RequestAddress(rq.PoolID, net.ParseIP(rq.Address), rq.Options)
@@ -238,7 +238,7 @@ func (listener *listener) requestAddress(w http.ResponseWriter, r *http.Request)
 
 func (listener *listener) releaseAddress(w http.ResponseWriter, r *http.Request) {
 	var rq iapi.ReleaseAddressRequest
-	if err := decode(w, r, &r); err != nil {
+	if err := decode(w, r, &rq); err != nil {
 		return
 	}
 	err := listener.i.ReleaseAddress(rq.PoolID, net.ParseIP(rq.Address))
