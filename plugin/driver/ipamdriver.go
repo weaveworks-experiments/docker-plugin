@@ -33,12 +33,13 @@ func (i *ipam) ReleasePool(poolID string) error {
 
 func (i *ipam) RequestAddress(poolID string, address net.IP, options map[string]string) (*net.IPNet, map[string]string, error) {
 	Log.Debugln("RequestAddress", poolID, address, options)
-	ip, err := i.d.allocateIP("HACK")
+	// Pass magic string to weave IPAM, which then stores the address under its own string
+	ip, err := i.d.allocateIP("_")
 	Log.Debugln("allocateIP returned", ip, err)
 	return ip, nil, err
 }
 
 func (i *ipam) ReleaseAddress(poolID string, address net.IP) error {
 	Log.Debugln("ReleaseAddress", poolID, address)
-	return i.d.releaseIP("HACK")
+	return i.d.releaseIP(address.String())
 }
